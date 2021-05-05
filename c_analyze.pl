@@ -1,3 +1,18 @@
+#/**
+# * Copyright 2021 Tatsuya Kubota
+# *
+# * Licensed under the Apache License, Version 2.0 (the "License");
+# * you may not use this file except in compliance with the License.
+# * You may obtain a copy of the License at
+# *
+# *     http://www.apache.org/licenses/LICENSE-2.0
+# *
+# * Unless required by applicable law or agreed to in writing, software
+# * distributed under the License is distributed on an "AS IS" BASIS,
+# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# * See the License for the specific language governing permissions and
+# * limitations under the License.
+# */
 #############################################################################
 # C言語プログラム解析スクリプト
 #
@@ -5,6 +20,7 @@
 #   関数フロー及び単体試験項目の抽出を目的とする
 #
 #############################################################################
+
 use strict;
 use warnings;
 
@@ -14,6 +30,9 @@ use File::Copy;
 use Class::Struct;
 use Cwd;
 
+#/* スクリプト動作の設定 */
+my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力する */
+my $pu_convert = 1;				#/* JAVAを起動してPUファイルを生成する */
 
 struct GlobalInfo => {
 	lines        => '$',       #/* 行数                       */
@@ -129,11 +148,9 @@ my @include_paths  = ();
 my @target_include = ();
 my @target_files = ();
 my $setting_file = "c_analyze_setting.txt";
-my $output_temp_text = 0;
 my $output_remain = "";
 my @output_lines;
 my @input_lines;
-my $pu_convert = 1;
 
 
 #/**********************************/
@@ -168,7 +185,6 @@ my $current_comment  = "";			#/* 直近のコメント（単行）     */
 my $current_comments = "";			#/* 直近のコメント（累積）     */
 my $current_brief    = "";			#/* 直近の@briefコメント       */
 my $in_define = 0;
-my $type_define = 0;
 my @literals = ();
 my %typedefs = ();					#/* 型定義のハッシュ */
 
@@ -215,7 +231,6 @@ sub init_variables
 	$current_comments = "";			#/* 直近のコメント（累積）     */
 	$current_brief    = "";			#/* 直近の@briefコメント       */
 	$in_define = 0;
-	$type_define = 0;
 	@literals = ();
 	@valid_line = (1);
 	@once_valid = (1);
@@ -1667,50 +1682,6 @@ sub analyze_module
 		return;
 	}
 
-	#/* 1行で完結しているtypedef */
-	if ($local_line =~ /^\s*typedef\s+([^;]*;)/)
-	{
-		my $defs = $1;
-		my $existing_types = "";
-		my $defined_type = "";
-
-		#/* 末尾のスペースを除去 */
-		$defs =~ s/([^\s]*)\s+;/$1;/g;
-#		print "ignore typedef $defs\n";
-
-		while ($defs =~ /([_A-Za-z][_A-Za-z0-9]*)\s+([^;]*;)/)
-		{
-			$defs = $2;
-			$existing_types = $existing_types . " " . $1;
-#			print "existing_types : $existing_types, $defs\n";
-		}
-
-		$defined_type = substr($defs, 0, length($defs) -1);
-
-#		print "typedef $existing_types as $defined_type!\n";
-		return;
-	}
-
-	#/* 型定義の中身は無視する */
-	if ($type_define == 1)
-	{
-		#/* typedefの終了行 */
-		if ($local_line =~ /^[^ ].*;\n/)
-		{
-#			print "type define end! $local_line";
-			$type_define = 0;
-		}
-		return;
-	}
-
-	#/* enumやstructのtypedef開始行 */
-	if ($local_line =~ /^\s*typedef/)
-	{
-#		print "type define start! $local_line";
-		$type_define = 1;
-		return;
-	}
-
 	#/* 新しい構文が開始した場合は、まず原文を保持 */
 	$current_sentence->text($current_sentence->text . $local_line);
 
@@ -1810,10 +1781,10 @@ sub analyze_line
 
 			$current_pos += length($sentence);
 		}
-		elsif ($remaining_line =~ /^([\+\-]*[0-9\.][0-9e\.]+[fFlL]*)/)
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]*[\.][0-9e\.]+[fFlL]*)/)
 		{
 			#/* 浮動小数（C99では16進表記も可能だそうですが、ここでは無視、この正規表現も怪しいが、コンパイル通るコードなら大丈夫なはず） */
-			print "float $1\n";
+			print "float $1 from $remaining_line\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
@@ -2100,7 +2071,7 @@ sub analyze_global_line
 					}
 					elsif ($local_array[$loop+3] eq "(")
 					{
-						printf "new func1\n";
+#						printf "new func1\n";
 						&new_function($current_sentence->name, $current_sentence->typ);
 						&analyze_arg_list($loop+4);
 						last;
@@ -2163,7 +2134,12 @@ sub analyze_global_line
 				$current_sentence->clear(0);
 				$current_sentence->position($loop + 1);
 				$current_sentence->init_nest($current_sentence->init_nest + 1);
+#				print "bracket open $loop @local_array\n";
 				last;
+			}
+			else
+			{
+				die "strange bracket open1!\n";
 			}
 		}
 		elsif ($local_array[$loop] =~ /(\})/)
@@ -2189,13 +2165,18 @@ sub analyze_global_line
 				$current_sentence->clear(0);
 				$current_sentence->position($loop + 1);
 				$current_sentence->init_nest($current_sentence->init_nest - 1);
+#				print "bracket close $loop @local_array\n";
 				last;
+			}
+			else
+			{
+				die "strange bracket close1! $loop @local_array\n";
 			}
 		}
 		elsif ($local_array[$loop] =~ /(\()/)
 		{
 			#/* ()開く */
-			printf "$1 in global! in_define = %d, init_nest = %d\n", $global_data->bracket_type, $current_sentence->init_nest;
+#			printf "$1 in global! in_define = %s, init_nest = %d\n", $global_data->bracket_type, $current_sentence->init_nest;
 			if ( ($global_data->bracket_type ne "none") ||
 			     ($current_sentence->init_nest > 0) )
 			{
@@ -2344,40 +2325,7 @@ sub analyze_global_line
 		}
 		elsif ($local_array[$loop] =~ /(\;)/)
 		{
-			#/* セミコロン */
-			if ($global_data->bracket_type ne "none")
-			{
-				#/* 型定義の中のセミコロンは無視 */
-				if ($loop + 1 == @local_array)
-				{
-					#/* 初期値の場合は後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 1);
-					last;
-				}
-			}
-			elsif ($current_sentence->is_func == 1)
-			{
-				#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-				print "function declare!\n";
-				$global_data->in_function(0);
-			}
-			elsif ($current_sentence->typ eq "")
-			{
-				#/* 空の文 */
-				print "empty sentence!\n";
-			}
-			elsif ($current_sentence->name eq "")
-			{
-				#/* 型の定義のみ */
-				print "only struct/union/enum define!\n";
-			}
-			else
-			{
-				#/* 変数の宣言 */
-#				print "new Val1!  [$local_array[$loop]] $loop, @local_array\n";
-				my $new_variable = &create_new_variable();
-			}
+			$loop = &analyze_semicolon($loop);
 		}
 		elsif ($local_array[$loop] =~ /(\,)/)
 		{
@@ -2388,6 +2336,7 @@ sub analyze_global_line
 				if ($current_sentence->name eq "")
 				{
 					#/* typだけ設定されていて、nameが空の場合は、型を省略したとみなす */
+					print "skip type!\n";
 					$current_sentence->name($current_sentence->typ);
 					$current_sentence->typ("int");
 				}
@@ -2400,8 +2349,15 @@ sub analyze_global_line
 				}
 				else
 				{
-					print "new Val2!  [$local_array[$loop]] \n";
-					my $new_variable = &create_new_variable();
+					if ($current_sentence->typ eq "typedef") 
+					{
+						#/* 一文で複数のtypedefをしちゃうパターン */
+					}
+					else
+					{
+						print "new Val2!  [$local_array[$loop]] \n";
+						my $new_variable = &create_new_variable();
+					}
 				}
 				$current_sentence->is_func(0);
 				$current_sentence->temp("");
@@ -2417,6 +2373,7 @@ sub analyze_global_line
 					#/* 後続行に処理を継続 */
 					$current_sentence->clear(0);
 					$current_sentence->position($loop + 1);
+#					print "comma $loop @local_array\n";
 					last;
 				}
 			}
@@ -2456,10 +2413,14 @@ sub analyze_global_line
 			}
 			elsif ($current_sentence->init_nest > 0)
 			{
-				#/* 後続行に処理を継続 */
-				$current_sentence->clear(0);
-				$current_sentence->position($loop + 1);
-				last;
+				if ($loop + 1 == @local_array)
+				{
+					#/* 後続行に処理を継続 */
+					$current_sentence->clear(0);
+					$current_sentence->position($loop + 1);
+#					print "symbol $loop @local_array\n";
+					last;
+				}
 			}
 			elsif ($current_sentence->typ eq "")
 			{
@@ -2503,6 +2464,10 @@ sub analyze_global_line
 	if ($current_sentence->clear == 1)
 	{
 		&clear_current_sentence();
+	}
+	else
+	{
+#		print "keep current sentence! $loop @local_array\n";
 	}
 }
 
@@ -3379,12 +3344,118 @@ sub analyze_case
 	return $loop;
 }
 
+#/* typedefの解析 */
+sub analyze_typedef_line
+{
+	my $loop        = 0;
+	my @local_array = @{$current_sentence->words};
+
+	#/* 1行で完結するtypedef */
+	my $first;
+	my $second = "";
+	my $existing_type = "";
+	my $defined_type  = "";
+	my $astarisk = 0;
+
+	$first = $local_array[$loop];
+	$loop++;
+	while ($local_array[$loop] ne ";")
+	{
+		if ($local_array[$loop] eq "*")
+		{
+			#/* アスタリスクは定義される型にしかつかないので個数を覚えておく */
+			$astarisk++;
+		}
+		elsif ($local_array[$loop] eq "{")
+		{
+			my $nest = 1;
+			$existing_type = $existing_type . " " . $local_array[$loop];
+			$loop++;
+
+			while ($nest > 0) {
+				if ($local_array[$loop] eq "{")
+				{
+					$nest++;
+				}
+				elsif ($local_array[$loop] eq "}")
+				{
+					$nest--;
+				}
+
+				$existing_type = $existing_type . " " . $local_array[$loop];
+				print "existing_type = $existing_type\n";
+				$loop++;
+			}
+
+			#/* {}が閉じきるまで進めたので、一つ戻しておく */
+			$loop--;
+		}
+		elsif ($local_array[$loop] eq ",")
+		{
+			#/* カンマの場合、1行で複数の型を定義している */
+			if ($existing_type eq "")
+			{
+				die "Strange typedef! $loop, @local_array\n";
+			}
+
+			$defined_type = $first;
+
+			my $text = $existing_type;
+			while ($astarisk > 0)
+			{
+				$text = $text . "*";
+				$astarisk--;
+			}
+			$typedefs{$defined_type} = $text;
+			print "typedef1! $defined_type as $text\n";
+
+			$second = $first;
+			$first = $local_array[$loop];
+		}
+		else
+		{
+			$second = $first;
+			$first = $local_array[$loop];
+
+			if ($defined_type eq "")
+			{
+				#/* 最初の型定義がまだ */
+				if ($existing_type eq "")
+				{
+					$existing_type = $second;
+				}
+				else
+				{
+					$existing_type = $existing_type . " " . $second;
+				}
+			}
+			else
+			{
+				#/* すでに一つ以上の型を定義している */
+			}
+		}
+
+		$loop++;
+	}
+
+	$defined_type = $first;
+	my $text = $existing_type;
+	while ($astarisk > 0)
+	{
+		$text = $text . "*";
+		$astarisk--;
+	}
+	$typedefs{$defined_type} = $text;
+	print "typedef2! $defined_type as $text\n";
+
+	return $loop;
+}
+
+#/* typedefの解析 */
 sub analyze_typedef
 {
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
-	my $existing_type = "";
-	my $defined_type  = "";
 
 	if ($loop + 1 >= @local_array)
 	{
@@ -3395,6 +3466,18 @@ sub analyze_typedef
 	if ($local_array[$loop] =~ /^(struct|union|enum)$/)
 	{
 		$global_data->bracket_type("typedef");
+		if (@local_array != $loop + 1) {
+			die "strange type define!!!\n";
+		}
+
+		#/* 型情報で覚えておく */
+		$current_sentence->typ("typedef");
+
+		#/* 次行に処理を持ち越す */
+		$loop++;
+		$current_sentence->clear(0);
+		$current_sentence->position($loop);
+		print "start typedef!\n";
 	}
 	elsif ($local_array[@local_array - 1] ne ";")
 	{
@@ -3402,12 +3485,8 @@ sub analyze_typedef
 	}
 	else
 	{
-		$defined_type = $local_array[@local_array - 2];
-		while ($loop < (@local_array - 2))
-		{
-			$existing_type = $existing_type . $local_array[$loop];
-			$loop++;
-		}
+		#/* 1行で完結するtypedef */
+		$loop = &analyze_typedef_line();
 	}
 
 	return $loop;
@@ -3443,9 +3522,14 @@ sub analyze_equal
 	else
 	{
 		#/* イコール */
-		if ($current_sentence->name eq "")
+		if ($global_data->bracket_type ne "none") 
+		{
+			#/* 型定義の中の場合は無視する */
+		}
+		elsif ($current_sentence->name eq "")
 		{
 			#/* typだけ設定されていて、nameが空の場合は、型を省略したとみなす */
+			print "type skip2!\n";
 			$current_sentence->name($current_sentence->typ);
 			$current_sentence->typ("int");
 		}
@@ -3459,7 +3543,6 @@ sub analyze_equal
 			#/* 後続行に処理を継続 */
 			$current_sentence->clear(0);
 			$current_sentence->position($loop + 1);
-			last;
 		}
 		else
 		{
@@ -3502,23 +3585,81 @@ sub analyze_semicolon
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* セミコロン */
-	if ($current_path->indent == $global_data->indent)
+	print "analyze semicolon $loop, @local_array\n";
+	if ($global_data->in_function == 1)
 	{
-		my $path_type = $current_path->type;
-		if ( ($path_type ne "case") &&
-		     ($path_type ne "default") )
+		#/* セミコロン */
+		print "analyze semicolon in function\n";
+		if ($global_data->indent == 0)
 		{
-			print "$path_type path without {}! @ " . $global_data->indent . " \n";
+			#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
+			print "function declare!\n";
+			$global_data->in_function(0);
+		}
+		elsif ($current_path->indent == $global_data->indent)
+		{
+			my $path_type = $current_path->type;
+			if ( ($path_type ne "case") &&
+				($path_type ne "default") )
+			{
+				print "$path_type path without {}! @ " . $global_data->indent . " \n";
 
-			#/* 親の実行PATHに復帰する */
-			$current_sentence->pop_current_path(1);
+				#/* 親の実行PATHに復帰する */
+				$current_sentence->pop_current_path(1);
+			}
+		}
+
+		if ($current_sentence->pu_text ne "")
+		{
+			$current_sentence->pu_text($current_sentence->pu_text . " " . $local_array[$loop]);
 		}
 	}
-
-	if ($current_sentence->pu_text ne "")
+	else
 	{
-		$current_sentence->pu_text($current_sentence->pu_text . " " . $local_array[$loop]);
+		#/* セミコロン */
+		if ($global_data->bracket_type ne "none")
+		{
+			#/* 型定義の中のセミコロンは無視 */
+			if ($loop + 1 == @local_array)
+			{
+				#/* 初期値の場合は後続行に処理を継続 */
+				$current_sentence->clear(0);
+				$current_sentence->position($loop + 1);
+			}
+		}
+		elsif ($current_sentence->is_func == 1)
+		{
+			#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
+			print "function declare!\n";
+			$global_data->in_function(0);
+		}
+		elsif ($current_sentence->typ eq "")
+		{
+			#/* 空の文 */
+			print "empty sentence!\n";
+		}
+		elsif ($current_sentence->name eq "")
+		{
+			#/* 型の定義のみ */
+			print "only struct/union/enum define!\n";
+		}
+		else
+		{
+			if ($current_sentence->typ eq "typedef") 
+			{
+				#/* typedefの完結 */
+				print "typedef $loop, @local_array\n";
+				$loop = &analyze_typedef_line($loop);
+				print "after typedef $loop, @local_array\n";
+			}
+			else
+			{
+				#/* 変数の宣言 */
+				print "new Val1!  [$local_array[$loop]] $loop, @local_array\n";
+				printf "typ : %s\n", $current_sentence->typ;
+				my $new_variable = &create_new_variable();
+			}
+		}
 	}
 	return $loop;
 }
@@ -3632,7 +3773,7 @@ sub analyze_function_line
 	{
 #		print "analyze in func : $local_array[$loop]\n";
 		if (exists $analyze_funcs{$local_array[$loop]}) {
-			print "analyze func $local_array[$loop] hit!!!\n";
+#			print "analyze func $local_array[$loop] hit!!!\n";
 			my $func = $analyze_funcs{$local_array[$loop]};
 			$loop = &$func($loop);
 		}
@@ -3725,7 +3866,7 @@ sub analyze_function_line
 		elsif ($current_sentence->pop_current_path == 1)
 		{
 			#/* 親の実行PATHに復帰する */
-#			print "pop_current_path!!!! pu_text : " . $current_sentence->pu_text . "\n";
+			print "pop_current_path!!!! pu_text : " . $current_sentence->pu_text . "\n";
 			&return_parent_path();
 		}
 
@@ -3993,7 +4134,7 @@ sub return_parent_path
 	}
 	else
 	{
-		print "unhandled path close!!!!!!\n";
+		print "unhandled path close!!!!!! path:$path_type\n";
 	}
 }
 
@@ -4187,3 +4328,5 @@ sub read_setting_file
 	}
 	close(SETTING_IN);
 }
+
+
