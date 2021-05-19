@@ -96,11 +96,10 @@ struct Path => {
 struct Variables => {
 	name        => '$',       #/* 変数名                     */
 	typ         => '$',       #/* 型                         */
-	init        => '$',       #/* 初期値                     */
+	init_val    => '$',       #/* 初期値                     */
 	extern      => '$',       #/* 外部変数か？               */
 	static      => '$',       #/* スタティックか？           */
 	const       => '$',       #/* 定数か？                   */
-	array       => '$',       #/* 配列か？                   */
 	func_read   => '@',       #/* リードする関数             */
 	func_write  => '@',       #/* ライトする関数             */
 	section     => '$',       #/* section指定                */
@@ -113,19 +112,25 @@ struct CurrentSentence => {
 	text       => '$',       #/* 原文                       */
 	name       => '$',       #/* 変数/関数名                */
 	typ        => '$',       #/* 型                         */
-	init       => '$',       #/* 初期値                     */
+	typ_fixed  => '$',       #/* 型確定                     */
+	name_fixed => '$',       #/* 名称確定                   */
+
+	init_val   => '$',       #/* 初期値                     */
+	typedef    => '$',       #/* typedef文                  */
+	struct     => '$',       #/* struct/union/enum         */
 	extern     => '$',       #/* 修飾子extern有無           */
 	static     => '$',       #/* 修飾子static有無           */
 	const      => '$',       #/* 修飾子const有無            */
 	unsigned   => '$',       #/* 修飾子unsigned有無         */
-	control    => '$',       #/* 制御文                     */
-	struct     => '$',       #/* struct/union/enumの有無    */
-	array      => '$',       #/* []の有無                   */
 	words      => '@',       #/* 単語                       */
 	position   => '$',       #/* 解析位置                   */
 	astarisk   => '$',       #/* アスタリスク               */
+	astarisk_f => '$',       #/* 関数ポインタのアスタリスク  */
+	astarisk_u => '$',       #/* 未判別のアスタリスク        */
 	is_func    => '$',       #/* 関数？                     */
 	init_nest  => '$',       #/* 初期値の{}ネスト           */
+	rb_nest    => '$',       #/* ()ネスト                   */
+	arg_list   => '$',       #/* 引数リスト                 */
 	temp       => '$',       #/* テンポラリ                 */
 
 	clear      => '$',       #/* クリア実施フラグ           */
@@ -195,7 +200,7 @@ my %analyze_funcs = (
                         'goto'    => \&analyze_goto,    'for'     => \&analyze_for,       'switch'   => \&analyze_switch,   '('       => \&analyze_round_bracket_open,
                         ':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,  ')'       => \&analyze_round_bracket_close,
                         '='       => \&analyze_equal,   'default' => \&analyze_default,   'while'    => \&analyze_while,    'return'  => \&analyze_return,
-                        'typedef' => \&analyze_typedef,                                                                     '['       => \&analyze_square_bracket_open,
+                        'typedef' => \&analyze_typedef, ','       => \&analyze_comma,                                       '['       => \&analyze_square_bracket_open,
                                                                                                                             ']'       => \&analyze_square_bracket_close,
 #                       'union'   => \&analyze_union,   'enum'    => \&analyze_enum,      'struct'   => \&analyze_struct,   
                     );
@@ -254,9 +259,22 @@ sub check_command_line_option
 			$setting_file = $arg;
 			$option = "";
 		}
+		elsif ($option eq "p")
+		{
+			$pu_convert = $arg;
+			$option = "";
+		}
 		elsif ($arg eq "-s")
 		{
 			$option = "s";
+		}
+		elsif ($arg eq "-p")
+		{
+			$option = "p";
+		}
+		elsif ($arg eq "-t")
+		{
+			$output_temp_text = 1;
 		}
 		else
 		{
@@ -311,6 +329,9 @@ sub main
 	&check_command_line_option();
 	foreach my $source_file (@target_files)
 	{
+		print "--------------------------------------------------------------------------------\n";
+		print " start analyzing $source_file\n";
+		print "--------------------------------------------------------------------------------\n";
 		&init_variables();
 		&analyze_source($source_file);
 	}
@@ -384,7 +405,7 @@ sub prepare_c_file
 
 	@output_lines = ();
 	@input_lines  = ();
-	open(SOURCE_IN,"$source_file") || die "Can't open source file.\n";
+	open(SOURCE_IN,"$source_file") || die "Can't open source file. $source_file\n";
 	while ( <SOURCE_IN> )
 	{
 		push @input_lines, $_;
@@ -1160,6 +1181,7 @@ sub line_parse
 	{
 		&output_line($local_line);
 		$current_comment = $local_line;
+#		print "current_comment1 : $current_comment\n";
 		return;
 	}
 
@@ -1642,6 +1664,7 @@ sub analyze_module
 				$first_comment = $temp_comment;
 			}
 			$current_comment = $temp_comment;
+#			print "current_comment2 : $current_comment\n";
 		}
 
 		if ($current_comment =~ /\@brief[ \t]*([^\n]+)/)
@@ -1723,43 +1746,42 @@ sub analyze_line
 			$sentence = $1;
 #			print "sentence \[$1\]\n";
 			&push_current_word($sentence);
-			if ($1 =~ /^static/)
+			if ($1 =~ /^static$/)
 			{
 				$current_sentence->static(1);
 			}
-			elsif ($1 =~ /^const/)
+			elsif ($1 =~ /^const$/)
 			{
 				$current_sentence->const(1);
 			}
-			elsif ($1 =~ /^extern/)
+			elsif ($1 =~ /^extern$/)
 			{
 				$current_sentence->extern(1);
 			}
-			elsif ($1 =~ /(^struct|^union|^enum)/)
+			elsif ($1 =~ /^(struct|union|enum)$/)
 			{
 #				print "$1\n";
 				$current_sentence->struct(1);
 			}
-			elsif ($1 =~ /(^inline|^volatile|^auto|^signed)/)
+			elsif ($1 =~ /^(inline|volatile|auto|signed)$/)
 			{
 				#/* 解析対象外 */
 #				print "$1\n";
 			}
-			elsif ($1 =~ /^unsigned/)
+			elsif ($1 =~ /^unsigned$/)
 			{
 				$current_sentence->unsigned(1);
 			}
-			elsif ($1 =~ /(^void|^char|^int|^short|^long|^float|^double)/)
+			elsif ($1 =~ /^(void|char|int|short|long|float|double)$/)
 			{
 #				print "$1\n";
 			}
-			elsif ($1 =~ /(^if|^for|^else|^while|^do|^switch|^case|^break|^continue|^return|^goto)/)
+			elsif ($1 =~ /^(if|for|else|while|do|switch|case|break|continue|return|goto)$/)
 			{
 				#/* 制御文。これらは{};:の文の区切りまでに一つしか入らないはず */
 #				print "$1\n";
-				$current_sentence->control($1);
 			}
-			elsif ($1 =~ /(^sizeof)/)
+			elsif ($1 =~ /^sizeof$/)
 			{
 #				print "$1\n";
 			}
@@ -1781,10 +1803,39 @@ sub analyze_line
 
 			$current_pos += length($sentence);
 		}
-		elsif ($remaining_line =~ /^([\+\-]*[0-9]*[\.][0-9e\.]+[fFlL]*)/)
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]+\.[0-9]*[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
-			#/* 浮動小数（C99では16進表記も可能だそうですが、ここでは無視、この正規表現も怪しいが、コンパイル通るコードなら大丈夫なはず） */
-			print "float $1 from $remaining_line\n";
+			#/* 浮動小数 */
+			#/*（C99では16進表記も可能だそうですが、ここでは無視 */
+			print "float1 $1 from $remaining_line";
+			&push_current_word($1);
+			$current_pos += length($1);
+		}
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
+		{
+			#/* 浮動小数 */
+			print "float2 $1 from $remaining_line";
+			&push_current_word($1);
+			$current_pos += length($1);
+		}
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]+\.[0-9]*[fFlL]*)/)
+		{
+			#/* 浮動小数 */
+			print "float3 $1 from $remaining_line";
+			&push_current_word($1);
+			$current_pos += length($1);
+		}
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[fFlL]*)/)
+		{
+			#/* 浮動小数 */
+			print "float4 $1 from $remaining_line";
+			&push_current_word($1);
+			$current_pos += length($1);
+		}
+		elsif ($remaining_line =~ /^([\+\-]*[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
+		{
+			#/* 浮動小数 */
+			print "float5 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
@@ -1795,16 +1846,16 @@ sub analyze_line
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
-		elsif ($remaining_line =~ /^([1-9][0-9]*[uUlL]*)/)
+		elsif ($remaining_line =~ /^(0[0-7]*[uUlL]*)/)
 		{
-			#/* 10進数 */
+			#/* 8進数 */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
-		elsif ($remaining_line =~ /^(0[0-7]*[uUlL]*)/)
+		elsif ($remaining_line =~ /^([1-9][0-9]*[uUlL]*)/)
 		{
-			#/* 8進数 */
+			#/* 10進数 */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
@@ -1939,17 +1990,22 @@ sub clear_current_sentence
 	$current_sentence->text("");
 	$current_sentence->name("");
 	$current_sentence->typ("");
-	$current_sentence->init("");
+	$current_sentence->typ_fixed(0);
+	$current_sentence->name_fixed(0);
+	$current_sentence->init_val("");
+	$current_sentence->typedef(0);
+	$current_sentence->struct(0);
 	$current_sentence->extern(0);
 	$current_sentence->static(0);
 	$current_sentence->const(0);
 	$current_sentence->unsigned(0);
-	$current_sentence->control(0);
-	$current_sentence->struct(0);
-	$current_sentence->array(0);
 	$current_sentence->position(0);
 	$current_sentence->astarisk(0);
+	$current_sentence->astarisk_f(0);
+	$current_sentence->astarisk_u(0);
 	$current_sentence->init_nest(0);
+	$current_sentence->rb_nest(0);
+	$current_sentence->arg_list("");
 	$current_sentence->temp("");
 	$current_sentence->is_func(0);
 
@@ -1992,483 +2048,546 @@ sub disp_current_words
 }
 
 
-
-#/* グローバルスコープの１行解析 */
-sub analyze_global_line
+#/* テキストに単語を付け足す。二語目以降の場合は、スペースを空ける */
+sub add_word_to_text
 {
-	my $loop;
+	my $text = $_[0];
+	my $word = $_[1];
+
+	if ($text eq "")
+	{
+		$text = $word;
+	}
+	else
+	{
+		$text = $text . " " . $word;
+	}
+
+	return $text;
+}
+
+
+#/* まず最初のワードを決定する */	
+sub analyze_global_first_word
+{
+	my $temp_text = "";
+	my $loop = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	$current_sentence->clear(1);
-
-#	&disp_current_words();
-	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
+	for (    ; $loop < @local_array; $loop++)
 	{
-#		print "analyze : $local_array[$loop]\n";
-		if ($local_array[$loop] =~ /^(struct|union|enum)$/)
+		if ($local_array[$loop] eq "typedef")
 		{
-			#/* グローバルスコープでこれらのキーワードが出てきた場合、typedefを除き、*/
-			#/* ①型の定義(無名の型もありうる)                                       */
-			#/* ②型定義＋変数／関数の宣言                                           */
-			#/* ③定義済みの型による変数／関数の宣言                                 */
-			#/* のいずれか                                                           */
-			print "analyze : $local_array[$loop] in global\n";
-			if ($loop+1 == @local_array)
-			{
-				print "$1 without name!\n";
-				$current_sentence->typ("$1 \(no name\)");
-
-				#/* 後続行に処理を継続 */
-				$current_sentence->clear(0);
-				$current_sentence->position($loop + 1);
-				$global_data->bracket_type($local_array[$loop]);
-				last;
-			}
-			else
-			{
-				print "$1 $local_array[$loop+1]\n";
-				if ($loop+2 == @local_array)
-				{
-					#/* 名称までで改行していた場合は、型定義が始まる */
-					print "$1 $local_array[$loop+1] define\n";
-					$current_sentence->typ("$1 $local_array[$loop+1]");
-
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 2);
-					$global_data->bracket_type($local_array[$loop]);
-					last;
-				}
-				else
-				{
-					#/* 名称の続きがあるとしたら、変数か関数の宣言が続く */
-					if ($local_array[$loop+2] eq "*")
-					{
-						$current_sentence->typ("$1 $local_array[$loop+1]*");
-						$loop++;
-					}
-					else
-					{
-						$current_sentence->typ("$1 $local_array[$loop+1]");
-					}
-
-					#/* 関数または変数の名称 */
-					$current_sentence->name("$local_array[$loop+2]");
-
-					if ($local_array[$loop+3] eq ";")
-					{
-#						print "struct variable imp!!!!!!!!!! $local_array[$loop+2]\n";
-						last;
-					}
-					elsif ($local_array[$loop+3] eq "=")
-					{
-#						print "struct variable imp with init val!!!!!!!!!! $local_array[$loop+2]\n";
-
-						#/* 後続行に処理を継続 */
-						$current_sentence->clear(0);
-						$current_sentence->position($loop + 4);
-						last;
-					}
-					elsif ($local_array[$loop+3] eq "(")
-					{
-#						printf "new func1\n";
-						&new_function($current_sentence->name, $current_sentence->typ);
-						&analyze_arg_list($loop+4);
-						last;
-					}
-				}
-				
-				last;
-			}
+			#/* typedefはとりあえず覚えておく */
+			$current_sentence->typedef(1);
 		}
-		elsif ($local_array[$loop] eq "typedef")
+		elsif ($local_array[$loop] =~/^(struct|union|enum)$/)
 		{
-			$loop = &analyze_typedef($loop);
-		}
-		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
-		{
-			#/* 型の修飾子 */
-			#/* すでに前段で処理しているのでここではスルー */
+			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+			if ($loop + 1 == @local_array)
+			{
+				#/* 末尾だったら持ち越し */
+				return $loop;
+			}
+
+			if ($local_array[$loop + 1] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+			{
+				#/* 構造体などのタグ名はここで処理する（まだ型は確定していない） */
+				$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+				$loop++;
+
+				if ($loop + 1 == @local_array)
+				{
+					#/* 末尾だったらさらに持ち越し */
+					return $loop;
+				}
+
+				if ($local_array[$loop + 1] ne "{")
+				{
+					#/* 構造体の定義が始まらないようであれば、型を確定する */
+					$current_sentence->typ_fixed(1);
+				}
+			}
 		}
 		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
 		{
 			#/* 標準の型 */
-			if ($global_data->bracket_type eq "none")
-			{
-#				print "type : $1\n";
-				$current_sentence->typ("$1");
-			}
+			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+			$current_sentence->typ_fixed(1);
 		}
-		elsif ($local_array[$loop] =~ /(\[)/)
+		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
 		{
-			#/* []開く 配列の定義 */
-			$current_sentence->array(1);
-			if ($current_sentence->name eq "")
-			{
-				$current_sentence->name($current_sentence->typ);
-				$current_sentence->typ("int");
-			}
-
-			while ($local_array[$loop] ne "]")
-			{
-				$current_sentence->temp($current_sentence->temp . "$local_array[$loop]");
-				$loop++;
-			}
-
-			$current_sentence->temp($current_sentence->temp . "]");
+			#/* 型の修飾子 */
+#			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 		}
-		elsif ($local_array[$loop] =~ /(\{)/)
+		elsif ($local_array[$loop] eq "(")
 		{
-			#/* 関数外で{}が現れるのは、配列・構造体の定義か初期化 */
-#			printf "{ in global $in_define, $indent_level, $loop, @local_array, init_nest=%d\n", $current_sentence->init_nest;
-			if ($global_data->bracket_type ne "none")
+			#/* 丸括弧は型の終了(関数、関数ポインタの場合は、引数リストも含めて型になるが、ひとまずここでは終了) */
+			($current_sentence->typ_fixed) or die "strange sentence1-1 may be omitted type! $loop, @local_array\n";		#/* 型の省略は不許可 */
+			last;
+		}
+		elsif ($local_array[$loop] eq "*")
+		{
+			#/* アスタリスクの場合は、型定義は完了 */
+			($current_sentence->typ_fixed) or die "strange sentence1-2 may be omitted type! $loop, @local_array\n";		#/* 型の省略は不許可 */
+			last;
+		}
+		elsif ($local_array[$loop] eq "=")
+		{
+			#/* イコールが来た場合は、型定義は完了 */
+			($current_sentence->typ_fixed) or die "strange sentence1-3 may be omitted type! $loop, @local_array\n";		#/* 型の省略は不許可 */
+			last;
+		}
+		elsif ($local_array[$loop] eq "[")
+		{
+			#/* 配列の場合 */
+			die "strange array define! may be omitted type!\n";
+		}
+		elsif ($local_array[$loop] eq "{")
+		{
+			$current_sentence->init_nest($current_sentence->init_nest + 1);
+
+			$loop = &analyze_some_bracket($loop, \$temp_text);
+			if ($temp_text eq "")
 			{
-				#/* 定義の場合は{}のネストを調べる */
-				$global_data->indent($global_data->indent + 1);
+				#/* 空文だったら、次行に持ち越して処理継続する */
+				return $loop;
 			}
 
-			if ($loop + 1 == @local_array)
+			#/* 型の定義は完了 */
+#			printf "temp text : $temp_text\n";
+			$current_sentence->init_nest(0);
+			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $temp_text));
+			$current_sentence->typ_fixed(1);
+			$loop++;
+			last;
+		}
+		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+		{
+			#/* シンボル */
+			if ($current_sentence->typ_fixed)
 			{
-				#/* 初期値の場合は、後続行に処理を継続 */
-#				print "{ in global!!!!\n";
-				$current_sentence->clear(0);
-				$current_sentence->position($loop + 1);
-				$current_sentence->init_nest($current_sentence->init_nest + 1);
-#				print "bracket open $loop @local_array\n";
 				last;
+			}
+
+			#/* ToDo マクロで修飾子とかを作られた時の対処 */
+
+			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+			$current_sentence->typ_fixed(1);
+		}
+		elsif ($local_array[$loop] eq ";")
+		{
+			if ($loop == 0)
+			{
+				#/* 無意味な ; */
+				print "; without sentence!\n";
 			}
 			else
 			{
-				die "strange bracket open1!\n";
+				#/* 型だけで文が閉じているケース。 */
+				($current_sentence->typ_fixed == 1) or die die "strange sentence1-4 may be omitted type! $loop, @local_array\n";
 			}
 		}
-		elsif ($local_array[$loop] =~ /(\})/)
+		else
 		{
-			#/* 関数外で{}が現れるのは、配列・構造体の定義か初期化 */
-#			my $num = @local_array;
-#			printf "} in global $in_define, $indent_level, $loop, %d, init_nest=%d\n", $num, $current_sentence->init_nest;
-			if ($global_data->bracket_type ne "none")
-			{
-				#/* 定義の場合は{}のネストを調べる */
-				$global_data->indent($global_data->indent - 1);
-				if ($global_data->indent == 0)
-				{
-					#/* 構造体定義の末尾 */
-					$global_data->bracket_type("none");
-				}
-			}
-
-			if ($loop + 1 == @local_array)
-			{
-				#/* 初期値の場合は後続行に処理を継続 */
-#				printf "} in global!!!!\n";
-				$current_sentence->clear(0);
-				$current_sentence->position($loop + 1);
-				$current_sentence->init_nest($current_sentence->init_nest - 1);
-#				print "bracket close $loop @local_array\n";
-				last;
-			}
-			else
-			{
-				die "strange bracket close1! $loop @local_array\n";
-			}
+			die "strange sentence1-5 may be omitted type! $loop, @local_array\n";
 		}
-		elsif ($local_array[$loop] =~ /(\()/)
+	}
+
+	return $loop;
+}
+
+
+sub analyze_global_round_bracket
+{
+	my $loop = $_[0];
+	my $ref_text = $_[1];
+	my $out_text = "";
+	my $sub_text = "";
+	my @local_array = @{$current_sentence->words};
+	my $local_astarisk = 0;
+	my $arglist_in_this_level = 0;
+
+#	print "analyze_global_round_bracket $loop, @local_array\n";
+	($local_array[$loop] eq "(") or die "not roud bracket open!\n";
+	$out_text = "(";
+	$loop++;
+	for (    ; $loop < @local_array; $loop++)
+	{
+		if ($local_array[$loop] eq "(")
 		{
-			#/* ()開く */
-#			printf "$1 in global! in_define = %s, init_nest = %d\n", $global_data->bracket_type, $current_sentence->init_nest;
-			if ( ($global_data->bracket_type ne "none") ||
-			     ($current_sentence->init_nest > 0) )
+			#/* ()を見つけたら */
+			if ($current_sentence->name_fixed)
 			{
-				$loop++;
-				while ($loop < @local_array)
+				#/* すでにシンボル名は決定しているので、引数リストがくる。ここでは再帰しない */
+				$loop = &analyze_some_bracket($loop, \$sub_text);
+				if ($sub_text eq "")
 				{
-					if ($local_array[$loop] eq ")")
-					{
-#						print "endof ()!\n";
-					}
-
-					$loop++;
+					return $loop;
 				}
 
-				if ($loop == @local_array)
+#				printf "() found! $sub_text is_func:%d\n", $current_sentence->is_func;
+
+				if ($current_sentence->is_func)
 				{
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop);
-					last;
-				}
-			}
-			elsif ($current_sentence->name eq "")
-			{
-				if ($local_array[$loop+1] =~ /(\*+)/)
-				{
-					my $count = 0;
-					while($local_array[$loop+1] =~ /(\*+)/)
+					#/* すでに引数リストが出て、関数が確定しているのに、さらに()括弧が来るのは、関数ポインタを戻り値とする関数か、もしくはその関数へのポインタ */
+					if ($current_sentence->astarisk_f > 0)
 					{
-						#/* アスタリスクが重なる場合 */
-						$loop++;
-						$count++;
-					}
-
-					#/* 名前が未定義で ( の後に * がくる場合は関数ポインタの可能性あり */
-					print "func ptr $1\n";
-
-					if ($current_sentence->typ eq "")
-					{
-						#/* 型名省略の場合 */
-						$current_sentence->typ("int");
-					}
-
-					my $astarisk = "*" x $count;
-					$current_sentence->name($local_array[$loop+1]);
-					if ($local_array[$loop+2] eq "(")
-					{
-						#/* 関数または関数ポインタ型を返す関数 */
-						print "may be function return func_ptr!\n";
-						$loop = &analyze_arg_list($loop+3);
-
-						if ($local_array[$loop + 1] ne ")")
-						{
-							die "strange function declare!\n";
-						}
-
-						if ( ($loop + 2 >= @local_array) || ($local_array[$loop + 2] ne "(") )
-						{
-							$loop += 1;
-
-							#/* 引数リストが来ないということは、紛らわしい関数定義 */
-							$current_sentence->temp($current_sentence->temp . "$astarisk");
-						}
-						else
-						{
-							$loop += 2;
-							$current_sentence->temp($current_sentence->temp . "($astarisk)");
-							while ($local_array[$loop] ne ")")
-							{
-								print "function return func_ptr!!!!!!! arg $local_array[$loop]\n";
-								$current_sentence->temp($current_sentence->temp . " " . "$local_array[$loop]");
-								$loop++;
-							}
-
-							$current_sentence->temp($current_sentence->temp . ")");
-							
-							my $temp_text = $current_sentence->temp;
-
-							print "function return func_ptr!!!!!!!  $temp_text\n";
-						}
-
-						printf "new func2\n";
-						&new_function($current_sentence->name, $current_sentence->typ);
-						$global_data->in_function(1);
-						$current_sentence->is_func(1);
+						#/* 関数ポインタの場合 */
+#						printf "astarisk_f : %d\n", $current_sentence->astarisk_f;
+						$current_sentence->typ($current_sentence->typ . " (" . "*" x $current_sentence->astarisk . ") " . $sub_text . " (" . "*" x $current_sentence->astarisk_f . ") " . $current_sentence->arg_list);
 					}
 					else
 					{
-						#/* 通常の変数または関数ポインタの定義 */
-						if ($local_array[$loop+2] ne ")")
-						{
-							die "invalid function pointer declare1?\n";
-						}
-
-						if ($local_array[$loop+3] ne "(")
-						{
-							#/* 引数リストが来ないということは、紛らわしい変数定義 */
-							$current_sentence->temp($current_sentence->temp . "($astarisk)");
-							$loop += 2;
-						}
-						else
-						{
-							#/* ここまで来たら関数ポインタ */
-							print "func_ptr!!!!!!!  $local_array[$loop+1]\n";
-							$current_sentence->temp($current_sentence->temp . "($astarisk)");
-							$loop += 3;
-							while ($local_array[$loop] ne ")")
-							{
-								$current_sentence->temp($current_sentence->temp . " " . "$local_array[$loop]");
-								$loop++;
-							}
-
-							$current_sentence->temp($current_sentence->temp . ")");
-						}
+						#/* 関数の場合 */
+#						printf "no astarisk_f : %d\n", $current_sentence->astarisk_f;
+						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_u . ") " . $sub_text);
+						$current_sentence->astarisk_u(0);
 					}
 				}
 				else
 				{
-					if ($current_sentence->typ eq "")
+					#/* とりあえず関数か関数ポインタかは確定。引数リストを覚えておく */
+					if ($current_sentence->astarisk_f > 0)
 					{
-						die "invalid function declare?\n";
+						#/* 関数ポインタの場合 */
+#						printf "astarisk_f4 : type:%s\n", $current_sentence->typ;
+#						printf "astarisk_f4 : temp_text:$sub_text\n";
+						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_f . ") ");
+					}
+
+					$current_sentence->arg_list($sub_text);
+					$current_sentence->is_func(1);
+					$arglist_in_this_level = 1;
+				}
+			}
+			else
+			{
+				$loop = &analyze_global_round_bracket($loop, \$sub_text);
+				if ($sub_text eq "")
+				{
+					$$ref_text = "";
+					return $loop;
+				}
+
+				$out_text = &add_word_to_text($out_text, $sub_text);
+			}
+		}
+		elsif ($local_array[$loop] eq ")")
+		{
+			#/* 閉じたところで終了。 */
+			($current_sentence->name_fixed) or die "missing token! @local_array\n";
+
+			if ($current_sentence->is_func == 0)
+			{
+				#/* 括弧が閉じる際に、引数リストが存在しておらず、なおかつローカルアスタリスクがある場合は、関数ポインタになる可能性あり */
+				$current_sentence->astarisk_f($current_sentence->astarisk_f + $local_astarisk);
+				printf "add astarisk_f : %d $loop, @local_array\n", $current_sentence->astarisk_f;
+			}
+			else
+			{
+				if ($arglist_in_this_level)
+				{
+					#/* この()の中に引数リストがあった場合、アスタリスクの扱いはまだ判断できない */
+					$current_sentence->astarisk_u($current_sentence->astarisk_u + $local_astarisk);
+					printf "add astarisk_u : %d $loop, @local_array\n", $current_sentence->astarisk_u;
+				}
+				else
+				{
+					#/* すでに引数リストがある場合は、このローカルアスタリスクは戻り値の型にかかる */
+					$current_sentence->astarisk($current_sentence->astarisk + $local_astarisk);
+				}
+			}
+
+			$out_text = &add_word_to_text($out_text, $local_array[$loop]);
+			$$ref_text = $out_text;
+			return $loop;
+		}
+		elsif ($local_array[$loop] eq "*")
+		{
+			#/* ()内のアスタリスクは位置によって型につくのか、関数ポインタになるのか分かれる */
+			$local_astarisk++;
+			$out_text = &add_word_to_text($out_text, $local_array[$loop]);
+		}
+		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
+		{
+			#/* 既存の型が来た場合は、戻り値の型を省略した関数の宣言ということになるが、不許可！ */
+			die "omitted return type is forbidden! case 1\n";
+		}
+		elsif ($local_array[$loop] eq ",")
+		{
+			#/* , が入るということは引数リストということ。これも戻り値の型を省略したとみなして不許可！ */
+			die "omitted return type is forbidden! case 2  $loop, @local_array\n";
+		}
+		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+		{
+			#/* シンボル名が来た！ */
+			$current_sentence->name($1);
+			$current_sentence->name_fixed(1);
+			$out_text = &add_word_to_text($out_text, $local_array[$loop]);
+		}
+		else
+		{
+			#/* その他のワード。あり得ない */
+			die "strange global round bracket! @local_array\n";
+		}
+	}
+
+	#/* ループを抜けた場合は、()が閉じていないので次行に持ち越し */
+	$$ref_text = "";
+	return $_[0];
+}
+
+#/* 続いてシンボルを確定する */
+sub analyze_global_second_word
+{
+	my $loop = $_[0];
+	my $temp_text = "";
+	my @local_array = @{$current_sentence->words};
+
+#	print "analyze_global_second_word! $loop, @local_array\n";
+	for (    ; $loop < @local_array; $loop++)
+	{
+		if ($local_array[$loop] eq "(")
+		{
+			#/* ()を見つけたら */
+			if ($current_sentence->name_fixed)
+			{
+				#/* すでにシンボル名は決定しているので、引数リストがくる。ここでは再帰しない */
+				$loop = &analyze_some_bracket($loop, \$temp_text);
+#				printf "() found2! $temp_text is_func:%d\n", $current_sentence->is_func;
+				if ($temp_text eq "")
+				{
+#					print "return $loop;\n";
+					return $loop;
+				}
+
+				if ($current_sentence->is_func)
+				{
+					#/* すでに引数リストが出て、関数が確定しているのに、さらに()括弧が来るのは、関数ポインタを戻り値とする関数か、もしくはその関数へのポインタ */
+					if ($current_sentence->astarisk_f > 0)
+					{
+						#/* 関数ポインタの場合 */
+#						printf "astarisk_f2 : %d\n", $current_sentence->astarisk_f;
+						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . $temp_text . " (" . "*" x $current_sentence->astarisk_f . ") " . $current_sentence->arg_list);
+#						printf "astarisk_f2 : type:%s\n", $current_sentence->typ;
+#						printf "astarisk_f2 : temp_text:$temp_text\n";
+#						printf "astarisk_f2 : arg_list:%s\n", $current_sentence->arg_list;
 					}
 					else
 					{
-						$current_sentence->name($current_sentence->typ);
-						$current_sentence->typ("int");
+						#/* 関数の場合 */
+#						printf "no astarisk_f2 : %d\n", $current_sentence->astarisk_f;
+						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_u . ") " . $temp_text);
+						$current_sentence->astarisk_u(0);
+#						printf "no astarisk_f2 : type:%s, temp_text:$temp_text\n", $current_sentence->typ;
+					}
+				}
+				else
+				{
+					#/* とりあえず関数か関数ポインタかは確定。引数リストを覚えておく */
+					if ($current_sentence->astarisk_f > 0)
+					{
+						#/* 関数ポインタの場合 */
+						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_f . ") " . $temp_text);
+#						printf "astarisk_f3 : type:%s\n", $current_sentence->typ;
+#						printf "astarisk_f3 : temp_text:$temp_text\n";
 					}
 
-					#/* 名前が定義済みの場合は関数とみなす */
-					printf "new func3\n";
-					&new_function($current_sentence->name, $current_sentence->typ);
-					$loop = &analyze_arg_list($loop+1);
-					$global_data->in_function(1);
+					$current_sentence->arg_list($temp_text);
 					$current_sentence->is_func(1);
 				}
 			}
 			else
 			{
-				#/* 名前が定義済みの場合は関数とみなす */
-				printf "new func4\n";
-				&new_function($current_sentence->name, $current_sentence->typ);
-				$loop = &analyze_arg_list($loop+1);
-				$global_data->in_function(1);
-				$current_sentence->is_func(1);
+				#/* 名前が確定していない場合は、専用の解析処理 */
+				$loop = &analyze_global_round_bracket($loop, \$temp_text);
 			}
-		}
-		elsif ($local_array[$loop] =~ /(\;)/)
-		{
-			$loop = &analyze_semicolon($loop);
-		}
-		elsif ($local_array[$loop] =~ /(\,)/)
-		{
-			#/* カンマ */
-#			printf "init_nest == %d\n", $current_sentence->init_nest;
-			if ($current_sentence->init_nest == 0)
-			{
-				if ($current_sentence->name eq "")
-				{
-					#/* typだけ設定されていて、nameが空の場合は、型を省略したとみなす */
-					print "skip type!\n";
-					$current_sentence->name($current_sentence->typ);
-					$current_sentence->typ("int");
-				}
-
-				if ($current_sentence->is_func == 1)
-				{
-					#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-					print "function declare!\n";
-					$global_data->in_function(0);
-				}
-				else
-				{
-					if ($current_sentence->typ eq "typedef") 
-					{
-						#/* 一文で複数のtypedefをしちゃうパターン */
-					}
-					else
-					{
-						print "new Val2!  [$local_array[$loop]] \n";
-						my $new_variable = &create_new_variable();
-					}
-				}
-				$current_sentence->is_func(0);
-				$current_sentence->temp("");
-				$current_sentence->astarisk(0);
-				$current_sentence->init("");
-				$current_sentence->array(0);
-				$current_sentence->name("");
-			}
-			else
-			{
-				if ($loop + 1 == @local_array)
-				{
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 1);
-#					print "comma $loop @local_array\n";
-					last;
-				}
-			}
-		}
-		elsif ($local_array[$loop] eq "=")
-		{
-			#/* イコール */
-			$loop = &analyze_equal($loop);
-		}
-		elsif ($local_array[$loop] =~ /(\*+)/)
-		{
-			#/* アスタリスク */
-#			print "astarisk  $1\n";
-			if ($current_sentence->typ eq "")
-			{
-				#/* 型名が省略されているとみなす */
-				$current_sentence->typ("int");
-			}
-
-			#/* アスタリスクは重なる場合があるので、length分加算する。int*** a_ptr; みたいな */
-			$current_sentence->astarisk($current_sentence->astarisk + length($local_array[$loop]));
 		}
 		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* シンボル */
-#			print "symbol!  [$1]\n";
-			my $symbol = $1;
-			if ($global_data->bracket_type ne "none")
+			#/* シンボル名が来た！ */
+			$current_sentence->name($1);
+			$current_sentence->name_fixed(1);
+		}
+		elsif ($local_array[$loop] eq "*")
+		{
+			$current_sentence->astarisk($current_sentence->astarisk + 1);
+		}
+		elsif ($local_array[$loop] eq "{")
+		{
+			#/* ここでは何もしない */
+		}
+		elsif ($local_array[$loop] eq "[")
+		{
+			#/* 配列の場合 */
+			($current_sentence->name_fixed) or die "strange array define! $loop, @local_array\n";
+			$loop = &analyze_some_bracket($loop, \$temp_text);
+			$current_sentence->name($current_sentence->name . $temp_text);
+		}
+		elsif ($local_array[$loop] eq "=")
+		{
+			#/* 変数の初期値が来るパターン */
+			($current_sentence->name_fixed) or die "strange init value! $loop, @local_array\n";
+
+			$loop++;
+			while ($loop < @local_array) 
 			{
-				if ($loop + 1 == @local_array)
+				if ($local_array[$loop] eq "{")
 				{
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 1);
+					$loop = &analyze_some_bracket($loop, \$temp_text);
+					if ($temp_text eq "")
+					{
+						#/* 空文だったら、次行に持ち越して = から処理継続する */
+						return $loop - 1;
+					}
+
+					$current_sentence->init_val(&add_word_to_text($current_sentence->init_val, $temp_text));
+				}
+				elsif ($local_array[$loop] eq ",")
+				{
+					$loop--;
 					last;
 				}
-			}
-			elsif ($current_sentence->init_nest > 0)
-			{
-				if ($loop + 1 == @local_array)
+				elsif ($local_array[$loop] eq ";")
 				{
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 1);
-#					print "symbol $loop @local_array\n";
+					$loop--;
 					last;
-				}
-			}
-			elsif ($current_sentence->typ eq "")
-			{
-				#/* 型指定とみなす */
-				$current_sentence->typ($symbol);
-			}
-			else
-			{
-				#/* 型がすでに決定している場合は、変数／関数名とみなす */
-				if ($current_sentence->name eq "")
-				{
-					$current_sentence->name($symbol);
 				}
 				else
 				{
-#					die "already name defined!\n";
+					$current_sentence->init_val(&add_word_to_text($current_sentence->init_val, $local_array[$loop]));
 				}
+				
+				$loop++;
 			}
 		}
-		else
+		elsif ($local_array[$loop] eq ",")
 		{
-			#/* 配列、構造体の初期化中 */
-#			printf "unknown!!!!! $local_array[$loop], init_nest = %d\n" , $current_sentence->init_nest;
-			if ($current_sentence->init_nest > 0)
+			($current_sentence->name_fixed) or die "strange comma without symbol! $loop, @local_array\n";
+			if (($current_sentence->is_func == 0) ||
+			    ($current_sentence->astarisk_f > 0))
 			{
-				if ($loop + 1 == @local_array)
+				if ($current_sentence->astarisk_f > 0)
 				{
-					#/* 後続行に処理を継続 */
-					$current_sentence->clear(0);
-					$current_sentence->position($loop + 1);
-					last;
+					$current_sentence->astarisk($current_sentence->astarisk_f);
+					$current_sentence->astarisk_f(0);
 				}
+				printf "add variable with ,   name : %s, astarisk_f : %d, astarisk : %d\n", $current_sentence->name, $current_sentence->astarisk_f, $current_sentence->astarisk;
+				&add_variable();
 			}
 			else
 			{
-				print "unknown!!!!! $local_array[$loop] @local_array\n";
+				#/* 関数の宣言の場合は、無視 */
+				$current_sentence->is_func(0);
 			}
+
+			#/* 型以外の情報は忘れる */
+			$current_sentence->name("");
+			$current_sentence->name_fixed(0);
+			$current_sentence->init_val("");
+			$current_sentence->astarisk(0);
+			$current_sentence->astarisk_f(0);
+			$current_sentence->astarisk_u(0);
+			$current_sentence->arg_list("");
+		}
+		elsif ($local_array[$loop] eq ";")
+		{
+			#/* ここでは何もしない */
+		}
+		else
+		{
+			die "strange sentence! $loop, @local_array\n";
 		}
 	}
 
-	if ($current_sentence->clear == 1)
+#	print "return $loop;\n";
+	return $loop;
+}
+
+sub analyze_global_sentence
+{
+	my $loop = $current_sentence->position;
+	my @local_array = @{$current_sentence->words};
+
+	my $temp_text;
+
+#	print "analyze_global_sentence : $loop, @local_array\n";
+
+	#/* まず最初に型を決定する */	
+	if ($current_sentence->typ_fixed == 0)
 	{
-		&clear_current_sentence();
+		$loop = &analyze_global_first_word($loop);
+		if ($current_sentence->typ_fixed == 0)
+		{
+			#/* 型が未確定の場合は、次行に持ち越して継続 */
+			return $loop;
+		}
+	}
+
+	$loop = &analyze_global_second_word($loop);
+	return $loop;
+}
+
+#/* グローバルスコープの１行解析 */
+sub analyze_global_line
+{
+	my @local_array = @{$current_sentence->words};
+
+	if (@local_array == 0)
+	{
+		return;
+	}
+
+	if ($local_array[@local_array - 1] eq ";")
+	{
+#		print "analyze_global_line ; @local_array\n";
+		$current_sentence->position(&analyze_global_sentence);
+		if ($current_sentence->init_nest == 0)
+		{
+			if (($current_sentence->is_func == 0) ||
+				($current_sentence->astarisk_f > 0)) {
+				if ($current_sentence->name_fixed) {
+					&add_variable();
+				}
+			}
+
+			&clear_current_sentence();
+			$current_brief    = "";
+			return;
+		}
+	}
+	elsif ($local_array[@local_array - 1] eq "{")
+	{
+#		print "analyze_global_line { @local_array\n";
+		$current_sentence->position(&analyze_global_sentence);
+		if ($current_sentence->is_func == 1)
+		{
+			if ($current_sentence->astarisk_u)
+			{
+				$current_sentence->astarisk($current_sentence->astarisk + $current_sentence->astarisk_u);
+			}
+
+			&new_function($current_sentence->name, $current_sentence->typ);
+			$global_data->in_function(1);
+			$global_data->indent($global_data->indent + 1);
+			&clear_current_sentence();
+			$current_function->lines($current_function->lines + 1);
+			$current_path->lines($current_path->lines + 1);
+			push @{$current_function->texts}, "{\n";
+			push @{$current_path->texts}, "{\n";
+			return;
+		} else {
+
+		}
+		
 	}
 	else
 	{
-#		print "keep current sentence! $loop @local_array\n";
+		#/* 次行に処理を持ち越す */
+#		print "analyze_global_line none @local_array\n";
 	}
+
 }
 
 
@@ -2533,7 +2652,7 @@ sub new_function
 
 	while ($astarisk > 0)
 	{
-		print "add *!\n";
+#		print "add *!\n";
 		$typ = $typ . "*";
 		$astarisk--;
 	}
@@ -2599,6 +2718,7 @@ sub analyze_arg_list
 
 	while($loop + 1 < @local_array)
 	{
+		print "analyze arg list : $local_array[$loop]\n";
 		if ($local_array[$loop] =~ /[\)\,]/)
 		{
 			#/* , または ) で引数の区切り */
@@ -2616,9 +2736,10 @@ sub analyze_arg_list
 			elsif ($temp2 eq "")
 			{
 				#/* 型を省略した場合 */
-				push @{$current_function->args_typ},  "int";
-				push @{$current_function->args_name}, "$temp1";
-				$temp2 = "";
+				die "omitted argument type is forbidden!\n";
+#				push @{$current_function->args_typ},  "int";
+#				push @{$current_function->args_name}, "$temp1";
+#				$temp2 = "";
 			}
 			else
 			{
@@ -2644,7 +2765,7 @@ sub analyze_arg_list
 				$astarisk += length($local_array[$loop]);
 			}
 		}
-		elsif ($local_array[$loop] =~ /(struct|union|enum)/)
+		elsif ($local_array[$loop] =~ /^(struct|union|enum)$/)
 		{
 			$is_struct = "$1 ";
 		}
@@ -2677,58 +2798,55 @@ sub analyze_arg_list
 }
 
 
-#/* 新規変数の登録 */
-sub create_new_variable
+#/* 変数の登録 */
+sub add_variable
 {
+	my $type = $current_sentence->typ;
 	my $name = $current_sentence->name;
-	my $init = $current_sentence->init;
 	my $astarisk = $current_sentence->astarisk;
-
 	my $new_variable = Variables->new();
-	$new_variable->name($current_sentence->name);
-	$new_variable->typ($current_sentence->typ);
-	while ($astarisk > 0)
+
+	if ($current_sentence->typedef)
 	{
-		print "add *!\n";
-		$new_variable->typ($new_variable->typ . "*");
-		$astarisk--;
-	}
-
-	#/* 関数ポインタや配列の場合に備えて、型名にtempを付加する */
-	$new_variable->typ($new_variable->typ . $current_sentence->temp);
-
-	$new_variable->init($current_sentence->init);
-	$new_variable->extern($current_sentence->extern);
-	$new_variable->static($current_sentence->static);
-	$new_variable->const($current_sentence->const);
-	$new_variable->array($current_sentence->array);
-
-	if ($current_brief ne "")
-	{
-		#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
-		$current_brief =~ s/^\s*//;
-		$new_variable->comment_txt($current_brief);
-		$current_brief = "";
-		$current_comment = "";
-		$first_comment   = "";
+		print "typedef! [$name] as [$type]\n";
+		$typedefs{$name} = $type;
 	}
 	else
 	{
-		#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
-		$current_comment =~ s/^\s*//;
-		$new_variable->comment_txt($current_comment);
-		$current_comment = "";
-		$first_comment   = "";
+		$new_variable->name($name);
+		$type = $type . "*" x $astarisk;
+		$new_variable->typ($type);
+
+		$new_variable->init_val($current_sentence->init_val);
+		$new_variable->extern($current_sentence->extern);
+		$new_variable->static($current_sentence->static);
+		$new_variable->const($current_sentence->const);
+
+		if ($current_brief ne "")
+		{
+			#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
+			$current_brief =~ s/^\s*//;
+			$new_variable->comment_txt($current_brief);
+			$current_brief = "";
+			$current_comment = "";
+			$first_comment   = "";
+		}
+		else
+		{
+			#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
+			$current_comment =~ s/^\s*//;
+			$new_variable->comment_txt($current_comment);
+			$current_comment = "";
+			$first_comment   = "";
+		}
+
+		@{$new_variable->func_read}  = ();
+		@{$new_variable->func_write} = ();
+		$new_variable->section($global_data->section);
+
+		printf "add Variable! [ %s ] [ %s ] = [ %s ]\n", $new_variable->typ, $current_sentence->name, $current_sentence->init_val;
+		push @variables, $new_variable;
 	}
-
-	@{$new_variable->func_read}  = ();
-	@{$new_variable->func_write} = ();
-	$new_variable->section($global_data->section);
-
-	my $typ = $new_variable->typ;
-	print "new Variable! [ $typ ] [ $name ] = [ $init ]\n";
-	push @variables, $new_variable;
-	return $new_variable;
 }
 
 
@@ -3344,6 +3462,72 @@ sub analyze_case
 	return $loop;
 }
 
+
+#/* ネストを考慮して{}, (), []を一塊のテキストとして返す */
+sub analyze_some_bracket
+{
+	my $loop         = $_[0];
+	my $ref_out_text = $_[1];
+	my $out_text     = "";
+
+	my @local_array  = @{$current_sentence->words};
+	my $open_bracket = $local_array[$loop];
+	my $close_bracket = "";
+	my $nest = 1;
+
+	if ($open_bracket eq "{")
+	{
+		$close_bracket = "}";
+	}
+	elsif ($open_bracket eq "(")
+	{
+		$close_bracket = ")";
+	}
+	elsif ($open_bracket eq "[")
+	{
+		$close_bracket = "]";
+	}
+	else
+	{
+		die "no bracket type : $local_array[$loop]\n";
+	}
+
+	$out_text = $local_array[$loop];
+	$loop++;
+	while ($loop < @local_array)
+	{
+		$out_text = $out_text . " " . $local_array[$loop];
+		if ($local_array[$loop] eq $open_bracket)
+		{
+			$nest++;
+		}
+		elsif ($local_array[$loop] eq $close_bracket)
+		{
+			$nest--;
+		}
+
+		if ($nest == 0)
+		{
+			last;
+		}
+
+		$loop++;
+	}
+
+	if ($nest == 0)
+	{
+		$$ref_out_text = $out_text;
+	}
+	else
+	{
+		#/* ネストが閉じきっていなかったら空文を返す。解析位置も進めない */
+		$$ref_out_text = "";
+		$loop = $_[0];
+	}
+	return $loop;
+}
+
+
 #/* typedefの解析 */
 sub analyze_typedef_line
 {
@@ -3357,38 +3541,28 @@ sub analyze_typedef_line
 	my $defined_type  = "";
 	my $astarisk = 0;
 
+	print "start analyze_typedef_line------------------- @local_array\n";
+	$loop++;
 	$first = $local_array[$loop];
 	$loop++;
 	while ($local_array[$loop] ne ";")
 	{
 		if ($local_array[$loop] eq "*")
 		{
-			#/* アスタリスクは定義される型にしかつかないので個数を覚えておく */
+			#/* アスタリスクは定義される型にしかつかないので個数を覚えておくだけ */
 			$astarisk++;
+			$loop++;
+			next;
 		}
 		elsif ($local_array[$loop] eq "{")
 		{
-			my $nest = 1;
-			$existing_type = $existing_type . " " . $local_array[$loop];
-			$loop++;
-
-			while ($nest > 0) {
-				if ($local_array[$loop] eq "{")
-				{
-					$nest++;
-				}
-				elsif ($local_array[$loop] eq "}")
-				{
-					$nest--;
-				}
-
-				$existing_type = $existing_type . " " . $local_array[$loop];
-				print "existing_type = $existing_type\n";
-				$loop++;
-			}
-
-			#/* {}が閉じきるまで進めたので、一つ戻しておく */
-			$loop--;
+			$second = $first;
+			$loop = &analyze_some_bracket($loop, \$first);
+		}
+		elsif ($local_array[$loop] eq "(")
+		{
+			$second = $first;
+			$loop = &analyze_some_bracket($loop, \$first);
 		}
 		elsif ($local_array[$loop] eq ",")
 		{
@@ -3411,30 +3585,34 @@ sub analyze_typedef_line
 
 			$second = $first;
 			$first = $local_array[$loop];
+			$loop++;
+			next;
 		}
 		else
 		{
+			#/* 通常のワードはとりあえず覚えておく */
 			$second = $first;
 			$first = $local_array[$loop];
-
-			if ($defined_type eq "")
+		}
+		
+		if ($defined_type eq "")
+		{
+			#/* 最初の型定義がまだ */
+			if ($existing_type eq "")
 			{
-				#/* 最初の型定義がまだ */
-				if ($existing_type eq "")
-				{
-					$existing_type = $second;
-				}
-				else
-				{
-					$existing_type = $existing_type . " " . $second;
-				}
+				$existing_type = $second;
 			}
 			else
 			{
-				#/* すでに一つ以上の型を定義している */
+				$existing_type = $existing_type . " " . $second;
 			}
 		}
+		else
+		{
+			#/* すでに一つ以上の型を定義している */
+		}
 
+		print "add word $second, $first, $existing_type\n";
 		$loop++;
 	}
 
@@ -3446,7 +3624,7 @@ sub analyze_typedef_line
 		$astarisk--;
 	}
 	$typedefs{$defined_type} = $text;
-	print "typedef2! $defined_type as $text\n";
+	print "-------------------------------typedef2! $defined_type as $text\n";
 
 	return $loop;
 }
@@ -3515,46 +3693,7 @@ sub analyze_equal
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	if ($global_data->in_function == 1)
-	{
-		&add_free_word($local_array[$loop]);
-	}
-	else
-	{
-		#/* イコール */
-		if ($global_data->bracket_type ne "none") 
-		{
-			#/* 型定義の中の場合は無視する */
-		}
-		elsif ($current_sentence->name eq "")
-		{
-			#/* typだけ設定されていて、nameが空の場合は、型を省略したとみなす */
-			print "type skip2!\n";
-			$current_sentence->name($current_sentence->typ);
-			$current_sentence->typ("int");
-		}
-
-		#/* 型と名前がそろっている */
-		if ($loop + 1 == @local_array)
-		{
-			#/* 同一行に初期値が書かれていない場合 */
-#			print "equal!!!! with out init value in this line! \n";
-
-			#/* 後続行に処理を継続 */
-			$current_sentence->clear(0);
-			$current_sentence->position($loop + 1);
-		}
-		else
-		{
-			#/* 同一行に初期値が書かれている場合 */
-#			print "equal!!!! [$local_array[$loop + 1]] \n";
-			while ($local_array[$loop + 1] =~ /[^\;\,]/)
-			{
-				$current_sentence->init($current_sentence->init . $local_array[$loop + 1]);
-				$loop++;
-			}
-		}
-	}
+	&add_free_word($local_array[$loop]);
 	return $loop;
 }
 
@@ -3579,88 +3718,63 @@ sub analyze_colon
 	return $loop;
 }
 
+sub analyze_comma
+{
+	my $loop        = $_[0];
+	my @local_array = @{$current_sentence->words};
 
+	#/* カンマ */
+	if ($current_sentence->is_func == 1)
+	{
+		#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
+#		print "function declare!\n";
+		$global_data->in_function(0);
+		$current_sentence->is_func(0);
+		$current_sentence->temp("");
+		$current_sentence->astarisk(0);
+		$current_sentence->init_val("");
+		$current_sentence->name("");
+	}
+	else
+	{
+#		print "analyze comma in function!\n";
+		&add_free_word($local_array[$loop]);
+	}
+
+	return $loop;
+}
+
+#/* セミコロン */
 sub analyze_semicolon
 {
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	print "analyze semicolon $loop, @local_array\n";
-	if ($global_data->in_function == 1)
+#	print "analyze semicolon $loop, @local_array\n";
+	if ($global_data->indent == 0)
 	{
-		#/* セミコロン */
-		print "analyze semicolon in function\n";
-		if ($global_data->indent == 0)
+		#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
+		print "function declare!\n";
+		$global_data->in_function(0);
+	}
+	elsif ($current_path->indent == $global_data->indent)
+	{
+		my $path_type = $current_path->type;
+		if ( ($path_type ne "case") &&
+			($path_type ne "default") )
 		{
-			#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-			print "function declare!\n";
-			$global_data->in_function(0);
-		}
-		elsif ($current_path->indent == $global_data->indent)
-		{
-			my $path_type = $current_path->type;
-			if ( ($path_type ne "case") &&
-				($path_type ne "default") )
-			{
-				print "$path_type path without {}! @ " . $global_data->indent . " \n";
+			print "$path_type path without {}! @ " . $global_data->indent . " \n";
 
-				#/* 親の実行PATHに復帰する */
-				$current_sentence->pop_current_path(1);
-			}
-		}
-
-		if ($current_sentence->pu_text ne "")
-		{
-			$current_sentence->pu_text($current_sentence->pu_text . " " . $local_array[$loop]);
+			#/* 親の実行PATHに復帰する */
+			$current_sentence->pop_current_path(1);
 		}
 	}
-	else
+
+	if ($current_sentence->pu_text ne "")
 	{
-		#/* セミコロン */
-		if ($global_data->bracket_type ne "none")
-		{
-			#/* 型定義の中のセミコロンは無視 */
-			if ($loop + 1 == @local_array)
-			{
-				#/* 初期値の場合は後続行に処理を継続 */
-				$current_sentence->clear(0);
-				$current_sentence->position($loop + 1);
-			}
-		}
-		elsif ($current_sentence->is_func == 1)
-		{
-			#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-			print "function declare!\n";
-			$global_data->in_function(0);
-		}
-		elsif ($current_sentence->typ eq "")
-		{
-			#/* 空の文 */
-			print "empty sentence!\n";
-		}
-		elsif ($current_sentence->name eq "")
-		{
-			#/* 型の定義のみ */
-			print "only struct/union/enum define!\n";
-		}
-		else
-		{
-			if ($current_sentence->typ eq "typedef") 
-			{
-				#/* typedefの完結 */
-				print "typedef $loop, @local_array\n";
-				$loop = &analyze_typedef_line($loop);
-				print "after typedef $loop, @local_array\n";
-			}
-			else
-			{
-				#/* 変数の宣言 */
-				print "new Val1!  [$local_array[$loop]] $loop, @local_array\n";
-				printf "typ : %s\n", $current_sentence->typ;
-				my $new_variable = &create_new_variable();
-			}
-		}
+		$current_sentence->pu_text($current_sentence->pu_text . " " . $local_array[$loop]);
 	}
+
 	return $loop;
 }
 
@@ -3896,11 +4010,19 @@ sub output_result
 		print OUT_FILE_OUT "\t$include\n";
 	}
 
+	printf OUT_FILE_OUT "\ntype defs\n";
+	printf OUT_FILE_OUT "\tname\ttype\n";
+	foreach my $key (sort(keys(%typedefs)))
+	{
+		printf OUT_FILE_OUT "\t%s\t%s\n", $key,$typedefs{$key};
+	}
+
+
 	printf OUT_FILE_OUT "\nVariables List\n";
 	printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\n";
 	foreach $variable (@variables)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init,$variable->comment_txt;
+		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt;
 	}
 
 	printf OUT_FILE_OUT "\nFunction List\n";
