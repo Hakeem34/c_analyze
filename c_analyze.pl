@@ -194,14 +194,20 @@ my @literals = ();
 my %typedefs = ();					#/* 型定義のハッシュ */
 
 my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse, \&line_indent_parse);
-my %analyze_funcs = (
+
+#/* 制御文（必ずセンテンスの先頭に来るはず、、、） */
+my %analyze_controls = (
                         'if'      => \&analyze_if,      'else'    => \&analyze_else,      'do'       => \&analyze_do,       '{'       => \&analyze_bracket_open,
                         'break'   => \&analyze_break,   'case'    => \&analyze_case,      'continue' => \&analyze_continue, '}'       => \&analyze_bracket_close,
-                        'goto'    => \&analyze_goto,    'for'     => \&analyze_for,       'switch'   => \&analyze_switch,   '('       => \&analyze_round_bracket_open,
-                        ':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,  ')'       => \&analyze_round_bracket_close,
-                        '='       => \&analyze_equal,   'default' => \&analyze_default,   'while'    => \&analyze_while,    'return'  => \&analyze_return,
-                        'typedef' => \&analyze_typedef, ','       => \&analyze_comma,                                       '['       => \&analyze_square_bracket_open,
-                                                                                                                            ']'       => \&analyze_square_bracket_close,
+                        'goto'    => \&analyze_goto,    'for'     => \&analyze_for,       'switch'   => \&analyze_switch,   'default' => \&analyze_default,
+						'while'   => \&analyze_while,   'return'  => \&analyze_return,    'typedef' => \&analyze_typedef
+                    );
+
+my %analyze_in_funcs = (
+                        '('       => \&analyze_round_bracket_open,   ')'       => \&analyze_round_bracket_close,
+                        '['       => \&analyze_square_bracket_open,  ']'       => \&analyze_square_bracket_close,
+						':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,  '='       => \&analyze_equal,
+                        ','       => \&analyze_comma,   '->'      => \&analyze_arrow,
 #                       'union'   => \&analyze_union,   'enum'    => \&analyze_enum,      'struct'   => \&analyze_struct,   
                     );
 
@@ -1807,35 +1813,35 @@ sub analyze_line
 		{
 			#/* 浮動小数 */
 			#/*（C99では16進表記も可能だそうですが、ここでは無視 */
-			print "float1 $1 from $remaining_line";
+#			print "float1 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
 			#/* 浮動小数 */
-			print "float2 $1 from $remaining_line";
+#			print "float2 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]+\.[0-9]*[fFlL]*)/)
 		{
 			#/* 浮動小数 */
-			print "float3 $1 from $remaining_line";
+#			print "float3 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[fFlL]*)/)
 		{
 			#/* 浮動小数 */
-			print "float4 $1 from $remaining_line";
+#			print "float4 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
 			#/* 浮動小数 */
-			print "float5 $1 from $remaining_line";
+#			print "float5 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
@@ -2282,7 +2288,7 @@ sub analyze_global_round_bracket
 			{
 				#/* 括弧が閉じる際に、引数リストが存在しておらず、なおかつローカルアスタリスクがある場合は、関数ポインタになる可能性あり */
 				$current_sentence->astarisk_f($current_sentence->astarisk_f + $local_astarisk);
-				printf "add astarisk_f : %d $loop, @local_array\n", $current_sentence->astarisk_f;
+#				printf "add astarisk_f : %d $loop, @local_array\n", $current_sentence->astarisk_f;
 			}
 			else
 			{
@@ -2290,7 +2296,7 @@ sub analyze_global_round_bracket
 				{
 					#/* この()の中に引数リストがあった場合、アスタリスクの扱いはまだ判断できない */
 					$current_sentence->astarisk_u($current_sentence->astarisk_u + $local_astarisk);
-					printf "add astarisk_u : %d $loop, @local_array\n", $current_sentence->astarisk_u;
+#					printf "add astarisk_u : %d $loop, @local_array\n", $current_sentence->astarisk_u;
 				}
 				else
 				{
@@ -2542,7 +2548,7 @@ sub analyze_global_line
 	if ($local_array[@local_array - 1] eq ";")
 	{
 #		print "analyze_global_line ; @local_array\n";
-		$current_sentence->position(&analyze_global_sentence);
+		$current_sentence->position(&analyze_global_sentence());
 		if ($current_sentence->init_nest == 0)
 		{
 			if (($current_sentence->is_func == 0) ||
@@ -2560,7 +2566,7 @@ sub analyze_global_line
 	elsif ($local_array[@local_array - 1] eq "{")
 	{
 #		print "analyze_global_line { @local_array\n";
-		$current_sentence->position(&analyze_global_sentence);
+		$current_sentence->position(&analyze_global_sentence());
 		if ($current_sentence->is_func == 1)
 		{
 			if ($current_sentence->astarisk_u)
@@ -2700,6 +2706,8 @@ sub new_function
 	@{$current_function->local_val}  = ();
 	@{$current_function->local_type} = ();
 
+	&analyze_arg_list();
+
 	&new_path($current_function, "", 0);
 	$current_function->path($current_path);
 }
@@ -2709,16 +2717,18 @@ sub new_function
 #/* 関数の引数解析処理(戻り値は引数リストを閉じる)のインデックス) */
 sub analyze_arg_list
 {
-	my @local_array = @{$current_sentence->words};
-	my $loop = $_[0];
+#	my @local_array = @{$current_sentence->words};
+	my @local_array = split(/ /, $current_sentence->arg_list);
+	my $loop = 1;
 	my $temp1 = "";
 	my $temp2 = "";
 	my $astarisk = 0;
 	my $is_struct = "";
 
+#	printf "start analyze arg list : %s\n", $current_sentence->arg_list;
 	while($loop + 1 < @local_array)
 	{
-		print "analyze arg list : $local_array[$loop]\n";
+#		print "analyze arg list : $local_array[$loop]\n";
 		if ($local_array[$loop] =~ /[\)\,]/)
 		{
 			#/* , または ) で引数の区切り */
@@ -2736,10 +2746,9 @@ sub analyze_arg_list
 			elsif ($temp2 eq "")
 			{
 				#/* 型を省略した場合 */
-				die "omitted argument type is forbidden!\n";
-#				push @{$current_function->args_typ},  "int";
-#				push @{$current_function->args_name}, "$temp1";
-#				$temp2 = "";
+				push @{$current_function->args_typ},  "int";
+				push @{$current_function->args_name}, "$temp1";
+				$temp2 = "";
 			}
 			else
 			{
@@ -3251,7 +3260,7 @@ sub analyze_else
 	}
 	else
 	{
-		print "else if!!!\n";
+#		print "else if!!!\n";
 	}
 
 	return $loop;
@@ -3529,144 +3538,12 @@ sub analyze_some_bracket
 
 
 #/* typedefの解析 */
-sub analyze_typedef_line
-{
-	my $loop        = 0;
-	my @local_array = @{$current_sentence->words};
-
-	#/* 1行で完結するtypedef */
-	my $first;
-	my $second = "";
-	my $existing_type = "";
-	my $defined_type  = "";
-	my $astarisk = 0;
-
-	print "start analyze_typedef_line------------------- @local_array\n";
-	$loop++;
-	$first = $local_array[$loop];
-	$loop++;
-	while ($local_array[$loop] ne ";")
-	{
-		if ($local_array[$loop] eq "*")
-		{
-			#/* アスタリスクは定義される型にしかつかないので個数を覚えておくだけ */
-			$astarisk++;
-			$loop++;
-			next;
-		}
-		elsif ($local_array[$loop] eq "{")
-		{
-			$second = $first;
-			$loop = &analyze_some_bracket($loop, \$first);
-		}
-		elsif ($local_array[$loop] eq "(")
-		{
-			$second = $first;
-			$loop = &analyze_some_bracket($loop, \$first);
-		}
-		elsif ($local_array[$loop] eq ",")
-		{
-			#/* カンマの場合、1行で複数の型を定義している */
-			if ($existing_type eq "")
-			{
-				die "Strange typedef! $loop, @local_array\n";
-			}
-
-			$defined_type = $first;
-
-			my $text = $existing_type;
-			while ($astarisk > 0)
-			{
-				$text = $text . "*";
-				$astarisk--;
-			}
-			$typedefs{$defined_type} = $text;
-			print "typedef1! $defined_type as $text\n";
-
-			$second = $first;
-			$first = $local_array[$loop];
-			$loop++;
-			next;
-		}
-		else
-		{
-			#/* 通常のワードはとりあえず覚えておく */
-			$second = $first;
-			$first = $local_array[$loop];
-		}
-		
-		if ($defined_type eq "")
-		{
-			#/* 最初の型定義がまだ */
-			if ($existing_type eq "")
-			{
-				$existing_type = $second;
-			}
-			else
-			{
-				$existing_type = $existing_type . " " . $second;
-			}
-		}
-		else
-		{
-			#/* すでに一つ以上の型を定義している */
-		}
-
-		print "add word $second, $first, $existing_type\n";
-		$loop++;
-	}
-
-	$defined_type = $first;
-	my $text = $existing_type;
-	while ($astarisk > 0)
-	{
-		$text = $text . "*";
-		$astarisk--;
-	}
-	$typedefs{$defined_type} = $text;
-	print "-------------------------------typedef2! $defined_type as $text\n";
-
-	return $loop;
-}
-
-#/* typedefの解析 */
 sub analyze_typedef
 {
 	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
 
-	if ($loop + 1 >= @local_array)
-	{
-		die "strange type define!!!\n";
-	}
-
-	$loop++;
-	if ($local_array[$loop] =~ /^(struct|union|enum)$/)
-	{
-		$global_data->bracket_type("typedef");
-		if (@local_array != $loop + 1) {
-			die "strange type define!!!\n";
-		}
-
-		#/* 型情報で覚えておく */
-		$current_sentence->typ("typedef");
-
-		#/* 次行に処理を持ち越す */
-		$loop++;
-		$current_sentence->clear(0);
-		$current_sentence->position($loop);
-		print "start typedef!\n";
-	}
-	elsif ($local_array[@local_array - 1] ne ";")
-	{
-		die "strange type define!!!\n";
-	}
-	else
-	{
-		#/* 1行で完結するtypedef */
-		$loop = &analyze_typedef_line();
-	}
-
+	#/* typedefはとりあえず覚えておく */
+	$current_sentence->typedef(1);
 	return $loop;
 }
 
@@ -3688,10 +3565,104 @@ sub analyze_square_bracket_close
 	return $loop;
 }
 
+sub analyze_symbol
+{
+	my $loop        = $_[0];
+	my @local_array = @{$current_sentence->words};
+
+	if (check_typedefs($local_array[$loop]))
+	{
+		print "typedef type! $local_array[$loop]\n";
+		$loop = &analyze_known_types($loop);
+	}
+	else
+	{
+		&add_free_word($local_array[$loop]);
+	}
+	return $loop;
+}
+
+
+sub analyze_structs
+{
+	my $loop        = $_[0];
+	my @local_array = @{$current_sentence->words};
+	my $temp_text;
+
+	print "analyze_structs $loop, @local_array\n";
+	$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+	if ($loop + 1 == @local_array)
+	{
+		#/* 末尾だったら持ち越し */
+		$current_sentence->clear(0);
+		$current_sentence->position($loop);
+		return $loop;
+	}
+
+	if ($local_array[$loop + 1] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+	{
+		#/* 構造体などのタグ名はここで処理する（まだ型は確定していない） */
+		$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+		$loop++;
+	}
+
+	if ($loop + 1 == @local_array)
+	{
+		#/* 末尾だったらさらに持ち越し */
+		$current_sentence->clear(0);
+		$current_sentence->position($_[0]);
+		return $loop;
+	}
+
+	if ($local_array[$loop + 1] ne "{")
+	{
+		#/* 構造体の定義が始まらないようであれば、型を確定する */
+		$current_sentence->typ_fixed(1);
+	}
+	else
+	{
+		$loop = &analyze_some_bracket($loop + 1, \$temp_text);
+		if ($temp_text eq "")
+		{
+			#/* 空文だったら、次行に持ち越して処理継続する */
+			$current_sentence->clear(0);
+			$current_sentence->position($_[0]);
+			return @local_array - 1;
+		}
+	}
+
+	print "structs in function $loop, @local_array\n";
+#	&add_free_word($local_array[$loop]);
+	return $loop;
+}
+
+sub analyze_known_types
+{
+	my $loop        = $_[0];
+	my @local_array = @{$current_sentence->words};
+
+	if ($current_sentence->typ eq "")
+	{
+		
+	}
+	&add_free_word($local_array[$loop]);
+	return $loop;
+}
+
 sub analyze_equal
 {
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
+
+	if ($prev_word =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+	{
+
+	}
+	else
+	{
+		print "strange equal! $prev_word, $loop, @local_array\n";
+	}
+
 
 	&add_free_word($local_array[$loop]);
 	return $loop;
@@ -3715,6 +3686,15 @@ sub analyze_colon
 	$current_sentence->pu_text("");
 	$current_path->break(0);   #/* ラベルが貼られると、到達不可能コードではなくなる */
 
+	return $loop;
+}
+
+sub analyze_arrow
+{
+	my $loop        = $_[0];
+	my @local_array = @{$current_sentence->words};
+
+	&add_free_word($local_array[$loop]);
 	return $loop;
 }
 
@@ -3886,16 +3866,39 @@ sub analyze_function_line
 	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
 #		print "analyze in func : $local_array[$loop]\n";
-		if (exists $analyze_funcs{$local_array[$loop]}) {
+		if (exists $analyze_controls{$local_array[$loop]}) {
+			my $func = $analyze_controls{$local_array[$loop]};
+
+			#/* 制御文はelse ifを除いて、必ず文の先頭にくる */
+			if ($loop > 0)
+			{
+				($local_array[$loop] eq "if") or die "control sentence not first position! $loop, @local_array\n";
+			}
+
+			$loop = &$func($loop);
+		}
+		elsif (exists $analyze_in_funcs{$local_array[$loop]}) {
 #			print "analyze func $local_array[$loop] hit!!!\n";
-			my $func = $analyze_funcs{$local_array[$loop]};
+			my $func = $analyze_in_funcs{$local_array[$loop]};
 			$loop = &$func($loop);
 		}
 		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
 		{
 			#/* 修飾子 */
 			print "modifier! $local_array[$loop]\n";
-#			$pu_text = &add_modifier($pu_text, \@local_array, \$loop);
+		}
+		elsif ($local_array[$loop] =~ /^(struct|union|enum)$/)
+		{
+			$loop = &analyze_structs($loop);
+			print "loop = $loop\n";
+		}
+		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
+		{
+			$loop = &analyze_known_types($loop);
+		}
+		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+		{
+			$loop = &analyze_symbol($loop);
 		}
 		else
 		{
@@ -4317,6 +4320,20 @@ sub check_func_name
 	}
 
 	return "";
+}
+
+
+#/* typedefの型定義リストに含まれる型かどうかをチェックする */
+sub check_typedefs
+{
+	my $name = $_[0];
+
+	if (exists ($typedefs{$name}))
+	{
+		return 1;
+	}
+
+	return 0;
 }
 
 
