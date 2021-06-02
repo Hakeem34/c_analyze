@@ -30,6 +30,9 @@ use File::Copy;
 use Class::Struct;
 use Cwd;
 
+use constant CONT_SIZE => "<b><size:24>";
+
+
 #/* スクリプト動作の設定 */
 my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力する */
 my $pu_convert = 1;				#/* JAVAを起動してPUファイルを生成する */
@@ -739,11 +742,11 @@ sub line_backslash_parse
 		}
 		else
 		{
-			if ($local_line =~ /([\;\{\}])\s*\n/)
+			if ($local_line =~ /([\;\:\{\}])\s*\n/)
 			{
-				#/* ; か { か } で終わっている行は、末尾のスペースを除去 */
+				#/* ; か : か { か } で終わっている行は、末尾のスペースを除去 */
 #				print "not joint $local_line\n";
-				$local_line =~ s/([\;\{\}])\s*\n/$1\n/
+				$local_line =~ s/([\;\:\{\}])\s*\n/$1\n/
 			}
 			elsif ($local_line =~ /([^\;\{\}])\s*\n/)
 			{
@@ -2957,11 +2960,11 @@ sub analyze_if
 	{
 		#/* else文の直後にifの場合は : 最後に追加されているであろうelse (No)をpopしてしまう */
 		pop @{$current_path->pu_text};
-		$current_sentence->pu_text("elseif (" . $current_sentence->pu_text . ") then (Yes)\n");
+		$current_sentence->pu_text("elseif (" . CONT_SIZE . $current_sentence->pu_text . ") then (" . CONT_SIZE . "Yes)\n");
 	}
 	else
 	{
-		$current_sentence->pu_text("if (" . $current_sentence->pu_text . ") then (Yes)\n");
+		$current_sentence->pu_text("if (" . CONT_SIZE . $current_sentence->pu_text . ") then (" . CONT_SIZE . "Yes)\n");
 	}
 
 #	printf "pu_text1 : %s\n", $current_sentence->pu_text;
@@ -3254,7 +3257,7 @@ sub analyze_else
 	{
 		#/* else文の処理 : 最後に追加されているであろうendifをpopしてしまう */
 		my $poped = pop @{$current_path->pu_text};
-		$current_sentence->pu_text("else (No)\n");
+		$current_sentence->pu_text("else (" . CONT_SIZE . "No)\n");
 #		printf("pu_text2 : else (No),  poped : %s\n", $poped);
 		$current_sentence->new_path("else");
 	}
@@ -3731,13 +3734,7 @@ sub analyze_semicolon
 	my @local_array = @{$current_sentence->words};
 
 #	print "analyze semicolon $loop, @local_array\n";
-	if ($global_data->indent == 0)
-	{
-		#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-		print "function declare!\n";
-		$global_data->in_function(0);
-	}
-	elsif ($current_path->indent == $global_data->indent)
+	if ($current_path->indent == $global_data->indent)
 	{
 		my $path_type = $current_path->type;
 		if ( ($path_type ne "case") &&
@@ -3842,6 +3839,16 @@ sub analyze_ternary
 	my @local_array = @{$current_sentence->words};
 
 	#/* 三項演算子 */
+
+	#/* 末尾がセミコロンではない */
+	if ($local_array[@local_array - 1] ne ";")
+	{
+		#/* 次行に持ち越し */
+		$current_sentence->clear(0);
+		$current_sentence->position($loop);
+		return @local_array - 1;
+	}
+
 	#/* とりあえず、行末まで全部一つの処理として扱う */
 	while ($loop < @local_array)
 	{
@@ -4225,7 +4232,7 @@ sub return_parent_path
 	if ($path_type eq "if")
 	{
 #		print "return from if path : $current_path->pu_text\n";
-		&push_pu_text("else (No)\nendif\n");
+		&push_pu_text("else (" . CONT_SIZE . "No)\nendif\n");
 	}
 	elsif ($path_type eq "else")
 	{
