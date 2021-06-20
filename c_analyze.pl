@@ -32,6 +32,10 @@ use Cwd;
 use Digest::MD5;
 
 use constant CONT_SIZE => "<b><size:24>";
+use constant SENTENCE_CONTROL => 0;
+use constant SENTENCE_DECLARE => 1;
+use constant SENTENCE_FORMULA => 2;
+use constant SENTENCE_UNKNOWN => 3;
 
 
 #/* スクリプト動作の設定 */
@@ -69,7 +73,7 @@ struct Functions => {
 	make_tree  => '$',       #/* Tree展開済み               */
 	label      => '@',       #/* ラベル                     */
 	local_val  => '@',       #/* ローカル変数               */
-	local_type => '@',       #/* ローカル定義の型           */
+	typedefs   => '%',
 };
 
 
@@ -121,7 +125,7 @@ struct CurrentSentence => {
 
 	init_val   => '$',       #/* 初期値                     */
 	typedef    => '$',       #/* typedef文                  */
-	struct     => '$',       #/* struct/union/enum         */
+	struct     => '$',       #/* struct/union/enum          */
 	extern     => '$',       #/* 修飾子extern有無           */
 	static     => '$',       #/* 修飾子static有無           */
 	const      => '$',       #/* 修飾子const有無            */
@@ -129,21 +133,19 @@ struct CurrentSentence => {
 	words      => '@',       #/* 単語                       */
 	position   => '$',       #/* 解析位置                   */
 	astarisk   => '$',       #/* アスタリスク               */
-	astarisk_f => '$',       #/* 関数ポインタのアスタリスク  */
-	astarisk_u => '$',       #/* 未判別のアスタリスク        */
+	astarisk_f => '$',       #/* 関数ポインタのアスタリスク */
+	astarisk_u => '$',       #/* 未判別のアスタリスク       */
 	is_func    => '$',       #/* 関数？                     */
-	init_nest  => '$',       #/* 初期値の{}ネスト           */
-	rb_nest    => '$',       #/* ()ネスト                   */
 	arg_list   => '$',       #/* 引数リスト                 */
-	temp       => '$',       #/* テンポラリ                 */
 
 	clear      => '$',       #/* クリア実施フラグ           */
 	backward   => '$',       #/* for文の繰り返し処理        */
 	switch_val => '$',       #/* switch文の評価値           */
 	pu_text    => '$',       #/* アクティビティ図用         */
 	case_val   => '$',       #/* caseラベルの値             */
-	func_call  => '$',       #/* コールする関数             */
-	case_condition   => '$', #/*                            */
+	func_call  => '$',       #/* 関数コールのフラグ         */
+	case_cond  => '$',       #/*                            */
+	sentence   => '$',       #/* 文のタイプ(式、宣言、制御) */
 };
 
 
@@ -178,22 +180,20 @@ my @valid_define_value = ();
 
 #/* C言語の解析に使う変数 */
 my @include_files  = ();
-my @variables = ();
+my @global_variables = ();
 my @functions = ();
 my $current_function = "";
 my @path_stack = ();
 my $current_path = "";
 my $global_data = GlobalInfo->new();
 my $current_sentence = CurrentSentence->new();
-my $prev_word = "";
-my $force_prev_word = "";
 my $first_comment    = "";			#/* コメントブロックの最初     */
 my $current_comment  = "";			#/* 直近のコメント（単行）     */
 my $current_comments = "";			#/* 直近のコメント（累積）     */
 my $current_brief    = "";			#/* 直近の@briefコメント       */
 my $in_define = 0;
 my @literals = ();
-my %typedefs = ();					#/* 型定義のハッシュ */
+my %global_typedefs = ();			#/* グローバルの型定義のハッシュ */
 
 my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse, \&line_indent_parse);
 
@@ -202,15 +202,12 @@ my %analyze_controls = (
                         'if'      => \&analyze_if,      'else'    => \&analyze_else,      'do'       => \&analyze_do,       '{'       => \&analyze_bracket_open,
                         'break'   => \&analyze_break,   'case'    => \&analyze_case,      'continue' => \&analyze_continue, '}'       => \&analyze_bracket_close,
                         'goto'    => \&analyze_goto,    'for'     => \&analyze_for,       'switch'   => \&analyze_switch,   'default' => \&analyze_default,
-						'while'   => \&analyze_while,   'return'  => \&analyze_return,    'typedef' => \&analyze_typedef
+                        'while'   => \&analyze_while,   'return'  => \&analyze_return
                     );
 
 my %analyze_in_funcs = (
-                        '('       => \&analyze_round_bracket_open,   ')'       => \&analyze_round_bracket_close,
-                        '['       => \&analyze_square_bracket_open,  ']'       => \&analyze_square_bracket_close,
-						':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,  '='       => \&analyze_equal,
-                        ','       => \&analyze_comma,   '->'      => \&analyze_arrow,
-#                       'union'   => \&analyze_union,   'enum'    => \&analyze_enum,      'struct'   => \&analyze_struct,   
+                        '('       => \&analyze_round_bracket_open,
+                        ':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,
                     );
 
 &main();
@@ -224,7 +221,7 @@ sub init_variables
 	@valid_define_name  = ();		#/* 有効なdefine値を列挙 */
 	@valid_define_value = ();
 	@include_files  = ();
-	@variables = ();
+	@global_variables = ();
 	@functions = ();
 	$current_function = "";
 	@path_stack = ();
@@ -237,8 +234,6 @@ sub init_variables
 	$global_data->in_function(0);
 	$global_data->bracket_type("none");
 	$current_sentence = CurrentSentence->new();
-	$prev_word = "";
-	$force_prev_word = "";
 	$first_comment    = "";			#/* コメントブロックの最初     */
 	$current_comment  = "";			#/* 直近のコメント（単行）     */
 	$current_comments = "";			#/* 直近のコメント（累積）     */
@@ -249,7 +244,7 @@ sub init_variables
 	@once_valid = (1);
 	$nest_level   = 0;
 	$indent_level = 0;
-	%typedefs = ();					#/* 型定義のハッシュ */
+	%global_typedefs = ();			#/* 型定義のハッシュ */
 }
 
 
@@ -2011,10 +2006,7 @@ sub clear_current_sentence
 	$current_sentence->astarisk(0);
 	$current_sentence->astarisk_f(0);
 	$current_sentence->astarisk_u(0);
-	$current_sentence->init_nest(0);
-	$current_sentence->rb_nest(0);
 	$current_sentence->arg_list("");
-	$current_sentence->temp("");
 	$current_sentence->is_func(0);
 
 	$current_sentence->clear(0);
@@ -2023,7 +2015,7 @@ sub clear_current_sentence
 	$current_sentence->pu_text("");
 	$current_sentence->case_val("");
 	$current_sentence->func_call(0);
-	$current_sentence->case_condition("");
+	$current_sentence->case_cond("");
 
 	@{$current_sentence->words} = ();
 #	&disp_current_words();
@@ -2151,8 +2143,6 @@ sub analyze_global_first_word
 		}
 		elsif ($local_array[$loop] eq "{")
 		{
-			$current_sentence->init_nest($current_sentence->init_nest + 1);
-
 			$loop = &analyze_some_bracket($loop, \$temp_text);
 			if ($temp_text eq "")
 			{
@@ -2162,7 +2152,6 @@ sub analyze_global_first_word
 
 			#/* 型の定義は完了 */
 #			printf "temp text : $temp_text\n";
-			$current_sentence->init_nest(0);
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $temp_text));
 			$current_sentence->typ_fixed(1);
 			$loop++;
@@ -2549,7 +2538,7 @@ sub analyze_global_line
 	{
 #		print "analyze_global_line ; @local_array\n";
 		$current_sentence->position(&analyze_global_sentence());
-		if ($current_sentence->init_nest == 0)
+		if ($current_sentence->typ_fixed == 1)
 		{
 			if (($current_sentence->is_func == 0) ||
 				($current_sentence->astarisk_f > 0)) {
@@ -2666,9 +2655,6 @@ sub new_function
 		$astarisk--;
 	}
 
-	#/* 関数ポインタや配列の場合に備えて、型名にtempを付加する */
-	$typ = $typ . $current_sentence->temp;
-
 	print "new function! [ $typ ][ $name ]\n";
 	$current_function = Functions->new();
 	$current_function->name($name);
@@ -2707,7 +2693,7 @@ sub new_function
 	@{$current_function->func_ref}   = ();
 	@{$current_function->label}      = ();
 	@{$current_function->local_val}  = ();
-	@{$current_function->local_type} = ();
+	%{$current_function->typedefs}   = ();
 
 	&analyze_arg_list();
 
@@ -2821,7 +2807,14 @@ sub add_variable
 	if ($current_sentence->typedef)
 	{
 		print "typedef! [$name] as [$type]\n";
-		$typedefs{$name} = $type;
+		if ($global_data->in_function == 1)
+		{
+			${$current_function->typedefs}{$name} = $type;
+		}
+		else
+		{
+			$global_typedefs{$name} = $type;
+		}
 	}
 	else
 	{
@@ -2857,7 +2850,16 @@ sub add_variable
 		$new_variable->section($global_data->section);
 
 		printf "add Variable! [ %s ] [ %s ] = [ %s ]\n", $new_variable->typ, $current_sentence->name, $current_sentence->init_val;
-		push @variables, $new_variable;
+
+		if ($global_data->in_function == 1)
+		{
+#			print "push local variable $name!!!\n";
+			push @{$current_function->local_val}, $new_variable;
+		}
+		else
+		{
+			push @global_variables, $new_variable;
+		}
 	}
 }
 
@@ -2879,11 +2881,6 @@ sub add_free_word
 
 
 #/* ( の解析                                     */
-#/* 関数内では以下のパターンを判別する必要がある */
-#/* 1. 演算の()         */
-#/* 2. キャストの()     */
-#/* 3. 関数コールの()   */
-#/* 4. 関数ポインタの() */
 sub analyze_round_bracket_open
 {
 	my $loop        = $_[0];
@@ -2908,16 +2905,6 @@ sub analyze_round_bracket_open
 
 	#/* 解析対象外のワード */
 	&add_free_word("(");
-	return $loop;
-}
-
-sub analyze_round_bracket_close
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	#/* 解析対象外のワード */
-	&add_free_word($local_array[$loop]);
 	return $loop;
 }
 
@@ -2972,9 +2959,9 @@ sub analyze_do
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	&create_new_path("do");
 	&push_pu_text("partition \"do while loop\" {\n");
 	&push_pu_text("repeat\n");
+	&create_new_path("do");
 	return $loop;
 }
 
@@ -3000,7 +2987,9 @@ sub analyze_goto
 	my $color = &get_color_text($label_num);
 	&push_pu_text("$color:goto **$label**;\n");
 	&push_pu_text("detach\n");
-	$loop += 1;
+	$loop += 2;
+	
+	$loop = &analyze_semicolon($loop);
 
 	return $loop;
 }
@@ -3037,6 +3026,8 @@ sub analyze_break
 		}
 	}
 
+	$loop++;
+	$loop = &analyze_semicolon($loop);
 	return $loop;
 }
 
@@ -3082,6 +3073,8 @@ sub analyze_return
 
 	&push_pu_text("stop\n");
 	$current_path->break(1);
+
+	$loop = &analyze_semicolon($loop);
 	return $loop;
 }
 
@@ -3118,10 +3111,9 @@ sub analyze_switch
 	}
 
 	$current_sentence->switch_val("(" . $condition . ")");
-	$current_sentence->pu_text("");
 	&push_pu_text("partition \"switch - case\" {\n");
 	&create_new_path("switch");
-	printf "switch : %s\n", $current_sentence->switch_val;
+#	printf "switch : %s\n", $current_sentence->switch_val;
 	return $loop;
 }
 
@@ -3166,7 +3158,7 @@ sub analyze_for
 		$loop++;
 	}
 	$pre_repeat_exec = $pre_repeat_exec . ";";
-	print "for ($init_condition  $repeat_condition  $pre_repeat_exec)\n";
+#	print "for ($init_condition  $repeat_condition  $pre_repeat_exec)\n";
 
 	&push_pu_text("partition \"for loop\" {\n");
 	&push_pu_text(":$init_condition]\nwhile ($repeat_condition) is (Yes)\n");
@@ -3184,7 +3176,7 @@ sub analyze_while
 
 
 	#/* while文 */
-#	print "analyze while! prev:$prev_word, $loop, @local_array\n";
+#	print "analyze while!F $loop, @local_array\n";
 	($loop+1 < @local_array) or die "strange while sentence!\n";
 
 	if ($local_array[$loop+1] ne "(")
@@ -3221,18 +3213,16 @@ sub analyze_while
 		($loop+1 < @local_array) or die "strange do while sentence1!\n";
 		$loop++;
 		($local_array[$loop] eq ";") or die "strange do while sentence2!\n";
-
-		$current_sentence->pu_text("");
 		&push_pu_text("repeat while (" . $condition . ") is (Yes) not (No)\n}\n");
 
 		#/* 親の実行PATHに復帰する */
 		&return_parent_path();
+		$loop = &analyze_semicolon($loop);
 	}
 	else
 	{
 		&push_pu_text("partition \"while loop\" {\n");
 		&push_pu_text("while (" . $condition . ") is (Yes)\n");
-#		print "pu_text4 : " . $current_sentence->pu_text;
 		&create_new_path("while");
 	}
 
@@ -3251,7 +3241,7 @@ sub analyze_else
 	if ($loop + 1 >= @local_array)
 	{
 		#/* else文の処理 : 最後に追加されているであろうendifをpopしてしまう */
-		my $poped = pop @{$current_path->pu_text};
+		pop @{$current_path->pu_text};
 		&push_pu_text("else (" . CONT_SIZE . "No)\n");
 		&create_new_path("else");
 	}
@@ -3283,13 +3273,9 @@ sub analyze_default
 		$broke = $current_path->break;
 		if ($broke == 0)
 		{
-			if ( ($prev_word ne "case") &&
-			     ($prev_word ne "default") )
-			{
-				#/* 何かしら処理を行ってからfall throughしてくるケース */
-				&push_pu_text(":fall through}\n");
-				&push_pu_text("detach\n");
-			}
+			#/* fall throughしてくるケース */
+			&push_pu_text(":fall through}\n");
+			&push_pu_text("detach\n");
 		}
 		&pop_path();
 	}
@@ -3311,30 +3297,15 @@ sub analyze_default
 		#/* いきなりdefault文が来た場合 */
 		my $switch_val = $current_path->switch_val;
 
-		$current_sentence->case_condition("if (switch $switch_val) then (default)\n");
+		$current_sentence->case_cond("if (". CONT_SIZE ."switch $switch_val) then (default)\n");
 		&create_new_path("default");
 	}
 	else
 	{
-		if ($prev_word ne "case")
-		{
-			$current_sentence->case_condition("elseif () then (default)\n");
-			&create_new_path("default");
-		}
-		else
-		{
-			#/* caseからfall throughでdefaultにつながっている場合、まず直前の子パスに戻る */
-			print "case fall through to default!\n";
-			&re_enter_latest_child();
-
-			#/* それから直前のif条件をpopしてしまって、条件を書き換える */
-			pop @{$current_path->pu_text};
-			$current_path->type("default");
-			&push_pu_text("elseif () then (default)\n");
-		}
+		$current_sentence->case_cond("elseif () then (" . CONT_SIZE . "default)\n");
+		&create_new_path("default");
 	}
 
-	$force_prev_word = "default";
 	return $loop;
 }
 
@@ -3353,13 +3324,9 @@ sub analyze_case
 		$broke = $current_path->break;
 		if ($broke == 0)
 		{
-			if ( ($prev_word ne "case") &&
-			     ($prev_word ne "default") )
-			{
-				#/* 何かしら処理を行ってからfall throughしてくるケース */
-				&push_pu_text(":fall through}\n");
-				&push_pu_text("detach\n");
-			}
+			#/* fall throughしてくるケース */
+			&push_pu_text(":fall through}\n");
+			&push_pu_text("detach\n");
 		}
 		&pop_path();
 	}
@@ -3383,12 +3350,11 @@ sub analyze_case
 	{
 		#/* ( 以外で開始していたら */
 		$current_sentence->case_val("(" . $current_sentence->case_val . ")");
-		printf "add case value : %s\n", $current_sentence->case_val;
+#		printf "add case value : %s\n", $current_sentence->case_val;
 	}
-	
 
 	$current_path->case_count($current_path->case_count + 1);
-	printf "case : %s", $current_sentence->case_val;
+#	printf "case : %s", $current_sentence->case_val;
 
 	if ($current_path->case_count <= 0)
 	{
@@ -3397,77 +3363,16 @@ sub analyze_case
 	elsif ($current_path->case_count == 1)
 	{
 		#/* 最初のcase文 */
-		my $case_text = "if (switch $switch_val) then (case " . $current_sentence->case_val . ")";
-		$force_prev_word = "case";
-		$current_sentence->case_condition($case_text);
+		my $case_text = "if (" . CONT_SIZE . "switch $switch_val) then (" . CONT_SIZE . "case " . $current_sentence->case_val . ")";
+		$current_sentence->case_cond($case_text);
 		&create_new_path("case");
 	}
 	else
 	{
 		#/* 2個目以降のcase文 */
-		if ( ($prev_word ne "case") &&
-		     ($prev_word ne "default") )
-		{
-			my $case_text = "elseif () then (case " . $current_sentence->case_val . ")";
-			$force_prev_word = "case";
-			$current_sentence->case_condition($case_text);
-			&create_new_path("case");
-		}
-		else
-		{
-			my $loop;
-			my $is_first;
-
-			$is_first = (@{$current_path->child} == 1);
-
-			#/* 複数caseがfall throughでつながっている場合、まず直前の子パスに戻る */
-			&re_enter_latest_child();
-			push @{$current_path->case_val}, $current_sentence->case_val;
-
-			#/* それから直前のif条件をpopしてしまって、条件を書き換える */
-			pop @{$current_path->pu_text};
-
-			if ($current_path->type eq "default")
-			{
-				if ($is_first)
-				{
-					#/* 先頭のラベルにはswitch条件を記述しておく */
-					$current_sentence->case_condition("if (switch $switch_val) then (default)\n");
-				}
-				else
-				{
-					$current_sentence->case_condition("elseif () then (default)\n");
-				}
-			}
-			else
-			{
-				if ($is_first)
-				{
-					#/* 先頭のラベルにはswitch条件を記述しておく */
-					$current_sentence->case_condition("if (switch $switch_val) then (");
-				}
-				else
-				{
-					$current_sentence->case_condition("elseif () then (");
-				}
-
-				for ($loop = 0; $loop < @{$current_path->case_val}; $loop++)
-				{
-					$current_sentence->case_val($current_path->case_val($loop));
-#					printf "foreach case_val : %s from $current_path $current_path->case_val\n", $current_sentence->case_val;
-					$current_sentence->case_condition($current_sentence->case_condition . "case " . $current_sentence->case_val);
-					if ($loop < @{$current_path->case_val} - 1)
-					{
-						$current_sentence->case_condition($current_sentence->case_condition . ", ");
-					}
-				}
-
-				$current_sentence->case_condition($current_sentence->case_condition . ")\n");
-			}
-
-			printf "case : %s", $current_sentence->case_condition;
-			&push_pu_text($current_sentence->case_condition);
-		}
+		my $case_text = "elseif () then (" . CONT_SIZE . "case " . $current_sentence->case_val . ")";
+		$current_sentence->case_cond($case_text);
+		&create_new_path("case");
 	}
 
 	return $loop;
@@ -3539,59 +3444,13 @@ sub analyze_some_bracket
 }
 
 
-#/* typedefの解析 */
-sub analyze_typedef
-{
-	my $loop        = $_[0];
-
-	#/* typedefはとりあえず覚えておく */
-	$current_sentence->typedef(1);
-	return $loop;
-}
-
-sub analyze_square_bracket_open
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	&add_free_word($local_array[$loop]);
-	return $loop;
-}
-
-sub analyze_square_bracket_close
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	&add_free_word($local_array[$loop]);
-	return $loop;
-}
-
-sub analyze_symbol
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	if (check_typedefs($local_array[$loop]))
-	{
-		print "typedef type! $local_array[$loop]\n";
-		$loop = &analyze_known_types($loop);
-	}
-	else
-	{
-		&add_free_word($local_array[$loop]);
-	}
-	return $loop;
-}
-
-
 sub analyze_structs
 {
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 	my $temp_text;
 
-	print "analyze_structs $loop, @local_array\n";
+#	print "analyze_structs $loop, @local_array\n";
 	$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 	if ($loop + 1 == @local_array)
 	{
@@ -3638,27 +3497,6 @@ sub analyze_structs
 	return $loop;
 }
 
-sub analyze_known_types
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	if ($current_sentence->typ eq "")
-	{
-		
-	}
-	&add_free_word($local_array[$loop]);
-	return $loop;
-}
-
-sub analyze_equal
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	&add_free_word($local_array[$loop]);
-	return $loop;
-}
 
 sub analyze_colon
 {
@@ -3675,46 +3513,11 @@ sub analyze_colon
 	my $label_num = &add_array_no_duplicate($current_function->label ,$label_name);
 	my $color = &get_color_text($label_num);
 	&push_pu_text("$color:**$label_name**;\n");
-	$current_sentence->pu_text("");
 	$current_path->break(0);   #/* ラベルが貼られると、到達不可能コードではなくなる */
 
 	return $loop;
 }
 
-sub analyze_arrow
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	&add_free_word($local_array[$loop]);
-	return $loop;
-}
-
-sub analyze_comma
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	#/* カンマ */
-	if ($current_sentence->is_func == 1)
-	{
-		#/* 関数の場合、宣言だけが行われているので関数には入らない。 */
-#		print "function declare!\n";
-		$global_data->in_function(0);
-		$current_sentence->is_func(0);
-		$current_sentence->temp("");
-		$current_sentence->astarisk(0);
-		$current_sentence->init_val("");
-		$current_sentence->name("");
-	}
-	else
-	{
-#		print "analyze comma in function!\n";
-		&add_free_word($local_array[$loop]);
-	}
-
-	return $loop;
-}
 
 #/* セミコロン */
 sub analyze_semicolon
@@ -3723,8 +3526,33 @@ sub analyze_semicolon
 	my @local_array = @{$current_sentence->words};
 	my $path_type = $current_path->type;
 
-	print "analyze semicolon ($path_type) $loop, @local_array\n";
+#	print "analyze semicolon ($path_type) $loop, @local_array\n";
 	($loop + 1 == @local_array) or die "strange semicolon!!!\n";
+
+	if ($current_sentence->pu_text =~ /^\:/)
+	{
+		if ($current_sentence->func_call == 0)
+		{
+			$current_sentence->pu_text($current_sentence->pu_text . "]\n");
+		}
+		else
+		{
+			$current_sentence->pu_text($current_sentence->pu_text . "|\n");
+		}
+
+		if ( ($current_path->break == 1) ||
+		     ($current_path->type eq "switch") )
+		{
+			print "never reach this sentence!!!!\n";
+			&push_pu_text("#HotPink:You cannot reach this sentence!\n" . substr($current_sentence->pu_text, 1));
+			$current_sentence->pu_text("");
+		}
+	}
+
+	if ($current_sentence->pu_text ne "")
+	{
+		&push_pu_text($current_sentence->pu_text);
+	}
 
 	if ($current_path->indent == $global_data->indent)
 	{
@@ -3734,27 +3562,8 @@ sub analyze_semicolon
 		{
 			#/* 親の実行PATHに復帰する */
 			print "$path_type path without {}! @ " . $global_data->indent . " \n";
-
-			if ($current_sentence->pu_text =~ /^\:/)
-			{
-				if ($current_sentence->func_call == 0)
-				{
-					$current_sentence->pu_text($current_sentence->pu_text . "]\n");
-				}
-				else
-				{
-					$current_sentence->pu_text($current_sentence->pu_text . "|\n");
-				}
-				&push_pu_text($current_sentence->pu_text);
-				$current_sentence->pu_text("");
-			}
 			&return_parent_path();
 		}
-	}
-
-	if ($current_sentence->pu_text ne "")
-	{
-		$current_sentence->pu_text($current_sentence->pu_text . " " . $local_array[$loop]);
 	}
 
 	return $loop;
@@ -3797,7 +3606,6 @@ sub analyze_bracket_close
 		{
 			&return_parent_path();
 		}
-#		printf "pu_text10 : %s\n", $current_sentence->pu_text;
 	}
 	elsif ($current_path->indent > $global_data->indent)
 	{
@@ -3854,62 +3662,169 @@ sub analyze_ternary
 	}
 
 	#/* とりあえず、行末まで全部一つの処理として扱う */
-	while ($loop < @local_array)
+	while ($loop < @local_array - 1)
 	{
 		&add_free_word($local_array[$loop]);
 		$loop++;
 	}
 
-#	print "Ternary operator! [" . $current_sentence->pu_text . "]\n";
-
 	return $loop - 1;
 }
 
 
-#/* 関数スコープの中の１行解析 */
-sub analyze_function_line_ex
+#/* 関数内の文の種類を先頭2語で判別する */
+sub analyze_function_sentence_type
+{
+	my @local_array = @{$current_sentence->words};
+	my $word = $local_array[0];
+
+	if ($word =~ /^(for|if|else|goto|continue|do|while|break|case|switch|default|return|\{|\})$/)
+	{
+		return SENTENCE_CONTROL;
+	}
+	elsif ($word =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(struct|union|enum|typedef)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(void|char|int|short|long|float|double)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(\;|\,)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(\(|\+\+|\-\-|\+|\-|\~|\*|\!|\&)$/)
+	{
+		return SENTENCE_FORMULA;
+	}
+	elsif ($word =~ /^([0-9]+)/)
+	{
+		return SENTENCE_FORMULA;
+	}
+	elsif ($word =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+	{
+		(@local_array > 1) or die "strange sentence!\n";
+
+		if ($local_array[1] eq ":")
+		{
+			#/* ラベルの場合 */
+			return SENTENCE_FORMULA;
+		}
+		elsif (check_typedefs($word))
+		{
+			#/* 既知の型の場合 */
+			return SENTENCE_DECLARE;
+		}
+
+		return &analyze_function_second_word($local_array[1]);
+	}
+
+	die "strange first word! $word\n";
+	return SENTENCE_UNKNOWN;
+}
+
+
+#/* 関数内の2語目の解析 */
+sub analyze_function_second_word
+{
+	my $word = $_[0];
+
+	if ($word =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(struct|union|enum|typedef)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(void|char|int|short|long|float|double)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /^(\;|\,)$/)
+	{
+		return SENTENCE_DECLARE;
+	}
+	elsif ($word =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+	{
+		return SENTENCE_DECLARE;
+	}
+
+	return SENTENCE_FORMULA;
+}
+
+
+#/* 関数内の宣言文の解析 */
+sub analyze_declare_sentence
+{
+	my $loop = 0;
+	my @local_array = @{$current_sentence->words};
+
+	$loop = &analyze_global_first_word($loop);
+	if ($current_sentence->typ_fixed == 0)
+	{
+		#/* セミコロンだけの空文の場合、無視 */
+		($loop == 1) or die "strange declare sentence! $loop, @local_array\n";
+		return;
+	}
+
+	$loop = &analyze_global_second_word($loop);
+	if (($current_sentence->is_func == 0) ||
+		($current_sentence->astarisk_f > 0)) {
+		if ($current_sentence->name_fixed) {
+			&add_variable();
+		}
+	}
+
+	return $loop;
+}
+
+#/* 関数内の宣言文の1行解析 */
+sub analyze_declare_line
 {
 	my $loop;
 	my @local_array = @{$current_sentence->words};
-	$current_sentence->clear(1);
+	my $nest = 0;
 
-	if (exists $analyze_controls{$local_array[0]}) 
+	$current_sentence->clear(0);
+	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
-		my $func = $analyze_controls{$local_array[$loop]};
-
-		#/* 制御文はelse ifを除いて、必ず文の先頭にくる */
-		if ($loop > 0)
+		#/* 文末のセミコロンを見つける */
+		if ($local_array[$loop] eq ";")
 		{
-			($local_array[$loop] eq "if") or die "control sentence not first position! $loop, @local_array\n";
+			if ($nest == 0)
+			{
+				&analyze_declare_sentence();
+				$current_sentence->clear(1);
+			}
 		}
-
-		$loop = &$func($loop);
+		elsif ($local_array[$loop] eq "{")
+		{
+			$nest++;
+		}
+		elsif ($local_array[$loop] eq "}")
+		{
+			$nest--;
+		}
 	}
 }
 
-#sub analyze_control_line
-sub analyze_function_line
-{
-	my $loop;
-	my @local_array = @{$current_sentence->words};
-	$current_sentence->clear(1);
 
-#	&disp_current_words();
+#/* 関数内の式の解析 */
+sub analyze_formula_sentence
+{
+	my $loop = 0;
+	my @local_array = @{$current_sentence->words};
+
 	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
-#		print "analyze in func1 : $loop, @local_array\n";
-		if (exists $analyze_controls{$local_array[$loop]}) {
-			my $func = $analyze_controls{$local_array[$loop]};
-
-			#/* 制御文はelse ifを除いて、必ず文の先頭にくる */
-			if ($loop > 0)
-			{
-				($local_array[$loop] eq "if") or die "control sentence not first position! $loop, @local_array\n";
-			}
-
-			$loop = &$func($loop);
-		}
-		elsif (exists $analyze_in_funcs{$local_array[$loop]}) {
+		if (exists $analyze_in_funcs{$local_array[$loop]}) 
+		{
 #			print "analyze in func2 $loop, @local_array\n";
 			my $func = $analyze_in_funcs{$local_array[$loop]};
 			$loop = &$func($loop);
@@ -3922,34 +3837,88 @@ sub analyze_function_line
 		elsif ($local_array[$loop] =~ /^(struct|union|enum)$/)
 		{
 			$loop = &analyze_structs($loop);
-			print "loop = $loop\n";
-		}
-		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
-		{
-			$loop = &analyze_known_types($loop);
-		}
-		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
-		{
-			$loop = &analyze_symbol($loop);
+#			print "loop = $loop\n";
 		}
 		else
 		{
 			#/* 解析対象外のワード */
 			&add_free_word($local_array[$loop]);
 		}
+	}
 
-		#/* ワードを覚えておく */
-		if ($force_prev_word ne "")
+	return $loop;
+}
+
+
+sub analyze_formula_line
+{
+	my $loop;
+	my @local_array = @{$current_sentence->words};
+	my $nest = 0;
+
+	if ($local_array[@local_array - 1] eq ":")
+	{
+		#/* ラベル */
+		&analyze_colon(@local_array - 1);
+		return;
+	}
+
+	$current_sentence->clear(0);
+	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
+	{
+		#/* 文末のセミコロンを見つける */
+		if ($local_array[$loop] eq ";")
 		{
-			$prev_word = $force_prev_word;
-			$force_prev_word = "";
-#			print "update prev_word1:$prev_word\n";
+			if ($nest == 0)
+			{
+				&analyze_formula_sentence();
+				$current_sentence->clear(1);
+			}
 		}
-		else
+		elsif ($local_array[$loop] eq "{")
 		{
-			$prev_word = $local_array[$loop];
-#			print "update prev_word2:$prev_word\n";
+			$nest++;
 		}
+		elsif ($local_array[$loop] eq "}")
+		{
+			$nest--;
+		}
+	}
+}
+
+
+#/* 関数内の1行解析 */
+sub analyze_function_line
+{
+	my $loop;
+	my @local_array = @{$current_sentence->words};
+	my $sentence_type = SENTENCE_UNKNOWN;
+
+	$current_sentence->clear(1);
+
+#	&disp_current_words();
+	if (@local_array == 0)
+	{
+		#/* 空行 */
+		&clear_current_sentence();
+		return;
+	}
+
+	$sentence_type = &analyze_function_sentence_type();
+	$current_sentence->sentence($sentence_type);
+	if ($sentence_type == SENTENCE_CONTROL)
+	{
+		#/* 制御文の処理 */
+		my $func = $analyze_controls{$local_array[0]};
+		&$func(0);
+	}
+	elsif ($sentence_type == SENTENCE_DECLARE)
+	{
+		&analyze_declare_line();
+	}
+	else
+	{
+		&analyze_formula_line();
 	}
 
 	if ($current_sentence->clear == 1)
@@ -3958,32 +3927,6 @@ sub analyze_function_line
 		{
 			push @{$current_function->texts}, $current_sentence->text;
 			push @{$current_path->texts}, $current_sentence->text;
-
-			if ($current_sentence->pu_text =~ /^\:/)
-			{
-				if ($current_sentence->func_call == 0)
-				{
-					$current_sentence->pu_text($current_sentence->pu_text . "]\n");
-				}
-				else
-				{
-					$current_sentence->pu_text($current_sentence->pu_text . "|\n");
-				}
-
-				if ( ($current_path->break == 1) ||
-				     ($current_path->type eq "switch") )
-				{
-					print "never reach this sentence!!!!\n";
-					&push_pu_text("#HotPink:You cannot reach this sentence!\n" . substr($current_sentence->pu_text, 1));
-					$current_sentence->pu_text("");
-				}
-			}
-
-#			print "pu_text3 : " . $current_sentence->pu_text . "\n";
-			if ($current_sentence->pu_text ne "")
-			{
-				&push_pu_text($current_sentence->pu_text);
-			}
 		}
 
 		&clear_current_sentence();
@@ -3996,21 +3939,21 @@ sub create_new_path
 	my $child_num;
 	my $path_type = $_[0];
 
+	if ($current_sentence->case_val ne "")
+	{
+		($current_path->type eq "switch") or die "not switch!\n";
+		push @{$current_path->case_val}, $current_sentence->case_val;
+	}
+
 #	print "new path! $loop, @local_array\n";
 	$child_num = @{$current_path->child};
 	&push_pu_text("Link to child[$child_num]\n");
 	&new_path($path_type, $current_path, $global_data->indent);
 	
-	if ($current_sentence->case_condition ne "")
+	if ($current_sentence->case_cond ne "")
 	{
-		my $push_text = $current_sentence->case_condition;
+		my $push_text = $current_sentence->case_cond;
 		&push_pu_text("$push_text\n");
-	}
-	
-	if ($current_sentence->case_val ne "")
-	{
-#		printf "push case_val : %s to $current_path $current_path->case_val\n", $current_sentence->case_val;
-		push @{$current_path->case_val}, $current_sentence->case_val;
 	}
 }
 
@@ -4038,17 +3981,17 @@ sub output_result
 
 	printf OUT_FILE_OUT "\ntype defs\n";
 	printf OUT_FILE_OUT "\tname\ttype\n";
-	foreach my $key (sort(keys(%typedefs)))
+	foreach my $key (sort(keys(%global_typedefs)))
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\n", $key,$typedefs{$key};
+		printf OUT_FILE_OUT "\t%s\t%s\n", $key,$global_typedefs{$key};
 	}
 
 
 	printf OUT_FILE_OUT "\nVariables List\n";
-	printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\n";
-	foreach $variable (@variables)
+	printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\tstatic\textern\n";
+	foreach $variable (@global_variables)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt;
+		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt,$variable->static,$variable->extern;
 	}
 
 	printf OUT_FILE_OUT "\nFunction List\n";
@@ -4084,6 +4027,15 @@ sub output_result
 			$arg_type = $function->args_typ($loop);
 			$arg_name = $function->args_name($loop);
 			printf OUT_FILE_OUT "\tArg[%s]\t%s\t%s\n", $loop, $arg_type, $arg_name;
+		}
+
+		printf OUT_FILE_OUT "\tLocal Variable\n";
+		printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\tstatic\textern\n";
+#		foreach $variable (@{$function->local_val})
+		for ($loop = 0; $loop < @{$function->local_val}; $loop++)
+		{
+			my $variable = ${$function->local_val}[$loop];
+			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt,$variable->static,$variable->extern;
 		}
 
 		printf OUT_FILE_OUT "\tFunctions call to\n";
@@ -4351,7 +4303,12 @@ sub check_typedefs
 {
 	my $name = $_[0];
 
-	if (exists ($typedefs{$name}))
+	if (exists ($global_typedefs{$name}))
+	{
+		return 1;
+	}
+
+	if (exists (${$current_function->typedefs}{$name}))
 	{
 		return 1;
 	}
