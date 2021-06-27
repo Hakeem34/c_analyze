@@ -16,8 +16,6 @@
 #############################################################################
 # C言語プログラム解析スクリプト
 #
-# 概要：
-#   関数フロー及び単体試験項目の抽出を目的とする
 #
 #############################################################################
 
@@ -31,7 +29,7 @@ use Class::Struct;
 use Cwd;
 use Digest::MD5;
 
-use constant CONT_SIZE => "<b><size:24>";
+use constant CONT_SIZE => "<b><size:20>";
 use constant SENTENCE_CONTROL => 0;
 use constant SENTENCE_DECLARE => 1;
 use constant SENTENCE_FORMULA => 2;
@@ -40,7 +38,7 @@ use constant SENTENCE_UNKNOWN => 3;
 
 #/* スクリプト動作の設定 */
 my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力する */
-my $pu_convert = 1;				#/* JAVAを起動してPUファイルを生成する */
+my $jar_path = "";				#/* JAVAを起動してPUファイルを生成する */
 
 struct GlobalInfo => {
 	lines        => '$',       #/* 行数                       */
@@ -195,7 +193,7 @@ my $in_define = 0;
 my @literals = ();
 my %global_typedefs = ();			#/* グローバルの型定義のハッシュ */
 
-my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse, \&line_indent_parse);
+my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse_1st, \&line_parse_2nd, \&line_indent_parse);
 
 #/* 制御文（必ずセンテンスの先頭に来るはず、、、） */
 my %analyze_controls = (
@@ -262,18 +260,9 @@ sub check_command_line_option
 			$setting_file = $arg;
 			$option = "";
 		}
-		elsif ($option eq "p")
-		{
-			$pu_convert = $arg;
-			$option = "";
-		}
 		elsif ($arg eq "-s")
 		{
 			$option = "s";
-		}
-		elsif ($arg eq "-p")
-		{
-			$option = "p";
 		}
 		elsif ($arg eq "-t")
 		{
@@ -293,11 +282,11 @@ sub output_line
 	my $local_line = $output_remain . $_[0];
 	$output_remain = "";
 
-	if ($output_temp_text)
-	{
+#	if ($output_temp_text)
+#	{
 #		print "input : $local_line\n";
-		print OUT_FILE_OUT $local_line;
-	}
+#		print OUT_FILE_OUT $local_line;
+#	}
 
 	while ($local_line =~/^([^\n]*)\n/)
 	{
@@ -351,11 +340,11 @@ sub pre_proc_c_file
 	my $proc_num     = $_[1] + 1;
 	my $index        = 0;
 
-	if ($output_temp_text)
-	{
-		$out_file = $output_fld . "/" . basename($source_file) . "_temp$proc_num.txt";
-		open(OUT_FILE_OUT,">$out_file")   || die "Can't create out file.\n";
-	}
+#	if ($output_temp_text)
+#	{
+#		$out_file = $output_fld . "/" . basename($source_file) . "_temp$proc_num.txt";
+#		open(OUT_FILE_OUT,">$out_file")   || die "Can't create out file.\n";
+#	}
 
 	print "-----------------\n";
 	print "start file[$proc_num]!\n";
@@ -381,7 +370,7 @@ sub post_proc_c_file
 
 	if ($output_temp_text)
 	{
-		close(OUT_FILE_OUT);
+#		close(OUT_FILE_OUT);
 
 		$out_file = $output_fld . "/" . basename($source_file) . "_temp_mem_$proc_num.txt";
 		open(OUT_FILE_OUT,">$out_file")   || die "Can't create out file.\n";
@@ -416,7 +405,7 @@ sub prepare_c_file
 	close(SOURCE_IN);
 
 
-	for ($loop = 0; $loop < 5; $loop++)
+	for ($loop = 0; $loop < 6; $loop++)
 	{
 		my $proc_ptr = $prepare_funcs[$loop];
 
@@ -510,10 +499,39 @@ sub make_directory
 }
 
 
+
+#/* エスケープ文字を考慮しつつ、クォーテーションのクローズ位置を探す */
+sub find_quatation
+{
+	my $quatation = $_[0];
+	my $string    = $_[1];
+	my $loop      = 0;
+	my $char;
+
+	for ($loop = 0; $loop <= length($string); $loop++)
+	{
+		$char = substr($string, $loop, 1);
+		if ($char eq $quatation)
+		{
+#			print "find quatation! $quatation, $string, $loop\n";
+			return $loop;
+		}
+		elsif ($char eq "\\")
+		{
+			$loop++;
+		}
+	}
+
+	return -1;
+}
+
 #/* コメントの分離処理 */
 sub comment_parse
 {
-	my $local_line = $_[0];
+#	print "enter : $_[0]line_postpone : $line_postpone\n";
+
+	my $local_line = $line_postpone . $_[0];
+	$line_postpone = "";
 
 	if ($is_single_comment == 1)
 	{
@@ -558,27 +576,7 @@ sub comment_parse
 			&output_line("/* " . $local_line . " */\n");
 		}
 	}
-	elsif ($is_literal == 1)
-	{
-		#/* リテラル行の継続 */
-		if ($local_line =~/(\")/)
-		{
-			$line_postpone = $line_postpone . $` . "\"";
-			$is_literal = 0;
-			&comment_parse($');
-		}
-		elsif ($local_line =~/\\\s*\n/)
-		{
-			print "Literal goes next line!\n";
-			&output_line($line_postpone . $local_line);
-			$line_postpone = "";
-		}
-		else
-		{
-			print "missing terminating \" character\n";
-		}
-	}
-	elsif ($local_line =~/(\/\/|\/\*|\")/)
+	elsif ($local_line =~/(\/\/|\/\*|\"|\')/)
 	{
 		#/* コメントまたはリテラルの始まり */
 
@@ -617,31 +615,71 @@ sub comment_parse
 
 			$line_postpone = "";
 		}
-		elsif ($1 eq "\"")
+		elsif ($1 eq "\'")
 		{
-			$line_rear = $';
-			if ($line_rear =~/\"/)
+			my $index = index($local_line, "\'");
+			my $length = &find_quatation("\'", $line_rear);
+
+			if ($length > 0)
 			{
-#				print "Literal!\n";
-				$line_postpone = $line_postpone . $line_front . "\"" . $` . "\"";
-				&comment_parse($');
+				#/* 同じ行で閉じている場合は、置き換えて再帰処理する */
+				my $local_literal = substr($local_line, $index, $length + 2);
+				my $literal_num = @literals;
+				push @literals, $local_literal;
+				substr($local_line,  $index, length($local_literal), "__C_ANALYZE_LITERALS_$literal_num");
+				&comment_parse($local_line);
 			}
 			elsif ($line_rear =~/\\\s*\n/)
 			{
-#				print "Literal goes next line!\n";
-				$is_literal = 1;
-				&output_line($line_postpone . $local_line);
-				$line_postpone = "";
+				#/* バックスラッシュで次行に持ち越している場合は、処理保留 */
+				$local_line =~ s/\\\s*\n//;
+				$line_postpone = $local_line;
+				print "line_postpone : $line_postpone\n";
 			}
 			else
 			{
-				print "missing terminating \" character\n";
+				die "missing terminating \" character3\n$local_line";
+			}
+		}
+		elsif ($1 eq "\"")
+		{
+			my $index = index($local_line, "\"");
+			my $length = &find_quatation("\"", $line_rear);
+
+			if ($length == 0)
+			{
+				#/* 空文""だった場合は、置き換えて再帰処理する */
+				my $local_literal = "\"\"";
+				my $literal_num = @literals;
+				push @literals, $local_literal;
+				substr($local_line,  $index, length($local_literal), "__C_ANALYZE_LITERALS_$literal_num");
+				&comment_parse($local_line);
+			}
+			elsif ($length > 0)
+			{
+				#/* 同じ行で閉じている場合は、置き換えて再帰処理する */
+#				my $local_literal = "\"$`$1\"";
+				my $local_literal = substr($local_line, $index, $length + 2);
+				my $literal_num = @literals;
+				push @literals, $local_literal;
+				substr($local_line,  $index, length($local_literal), "__C_ANALYZE_LITERALS_$literal_num");
+				&comment_parse($local_line);
+			}
+			elsif ($line_rear =~/\\\s*\n/)
+			{
+				#/* バックスラッシュで次行に持ち越している場合は、処理保留 */
+				$local_line =~ s/\\\s*\n//;
+				$line_postpone = $local_line;
+				print "line_postpone : $line_postpone\n";
+			}
+			else
+			{
+				die "missing terminating \" character2\n$local_line";
 			}
 		}
 		else
 		{
 #			print "C Style Comment! $local_line\n";
-			$line_rear = $';
 			if ($' =~/(\*\/)/)
 			{
 				&output_line("/* " . $` . " */\n");
@@ -742,12 +780,6 @@ sub line_backslash_parse
 #				print "not joint $local_line\n";
 				$local_line =~ s/([\;\:\{\}])\s*\n/$1\n/
 			}
-			elsif ($local_line =~ /([^\;\{\}])\s*\n/)
-			{
-				#/* ; か { か } で終わってない行は、スペース1個空けて連結する */
-#				print "joint $local_line\n";
-				$line_postpone = "$`$1 ";
-			}
 			else
 			{
 #				print "What? $local_line\n";
@@ -759,45 +791,6 @@ sub line_backslash_parse
 	{
 		#/* 行頭の処理がめんどうなので、とりあえず半角スペースをつけてしまう */
 		$local_line = " " . $local_line;
-
-		if ($local_line =~ /^\s*\#/)
-		{
-			#/* ディレクティブは除外 */
-		}
-		else
-		{
-			#/* リテラルを全部置き換えてしまう。名前がぶつかったらすいません。。。 */
-			while (($index = index($local_line, "\"")) != -1)
-			{
-				my $line_front = substr($local_line, 0, $index + 1);
-				my $line_rear = substr($local_line, $index + 1);
-#				print "find literal in $line_front $line_rear";
-
-				if ($line_rear =~ /([^\\])\"/)
-				{
-					my $local_literal = "\"$`$1\"";
-					print "literal2 is $local_literal\n";
-					my $literal_num = @literals;
-					push @literals, $local_literal;
-#					$local_line =~ s/$local_literal/\__C_ANALYZE_LITERALS_$literal_num/;
-					substr($local_line,  $index, length($local_literal), "__C_ANALYZE_LITERALS_$literal_num");
-				}
-				elsif ($line_rear =~ /^\"/)
-				{
-					my $local_literal = "\"\"";
-					print "literal1 is $local_literal\n";
-					my $literal_num = @literals;
-					push @literals, $local_literal;
-					substr($local_line,  $index, length($local_literal), "__C_ANALYZE_LITERALS_$literal_num");
-				}
-				else
-				{
-#					print "literal not found in $line_rear";
-					die "literal end not found!\n";
-				}
-			}
-		}
-
 		&output_line($local_line);
 	}
 }
@@ -893,6 +886,7 @@ sub line_define_parse
 	}
 
 	#/* プリプロセッサの処理 */
+	print "define parse : $local_line";
 	foreach $prepro (@c_prepro_word)
 	{
 		if ($local_line =~/#\s*$prepro/)
@@ -1172,7 +1166,45 @@ sub find_bracket_close
 }
 
 
-sub line_parse
+#/*  */
+sub line_parse_1st
+{
+	my $local_line = $_[0];
+	my $index;
+
+	#/* コメント行はそのまま出力 */
+	if (&is_comment_line($local_line))
+	{
+		&output_line($local_line);
+		return;
+	}
+
+
+	$local_line = $line_postpone . $_[0];
+	$line_postpone = "";
+
+	if ($local_line =~ /^\s*\#/)
+	{
+		#/* ディレクティブは除外 */
+	}
+	else
+	{
+		if ($local_line =~ /([^\;\{\}])\s*\n/)
+		{
+			#/* ; か { か } で終わってない行は、スペース1個空けて連結する */
+#			print "joint $local_line\n";
+			$line_postpone = "$`$1 ";
+		}
+	}
+
+	if ($line_postpone eq "")
+	{
+		&output_line($local_line);
+	}
+}
+
+
+sub line_parse_2nd
 {
 	my $local_line = $_[0];
 	my $prepro;
@@ -1701,6 +1733,20 @@ sub analyze_module
 		return;
 	}
 
+	if ($local_line =~ /\#include\s*__C_ANALYZE_LITERALS_([0-9]+)/)
+	{
+		my $path = $literals[$1];
+		$path =~ s/\"//g;
+		while ($path =~ /[\/\\]/)
+		{
+			$path =~ s/.*[\/\\]([^\n]*)/$1/;
+		}
+
+		print "include $path\n";
+		push @include_files, $path;
+		return;
+	}
+
 	#/* インクルードとプラグマ以外のディレクティブは無視 */
 	if ($local_line =~ /^\#/)
 	{
@@ -1892,13 +1938,6 @@ sub analyze_line
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
-		elsif ($remaining_line =~ /^(\+\+|\-\-|\!|\~|\&|\*)/)
-		{
-			#/* 単項演算子 */
-#			print "Unary operator! $1\n";
-			&push_current_word($1);
-			$current_pos += length($1);
-		}
 		elsif ($remaining_line =~ /^(\<\<\=|\>\>\=)/)
 		{
 			#/* シフト＋代入 */
@@ -1917,6 +1956,13 @@ sub analyze_line
 		{
 			#/* 二文字の演算子 */
 #			print "operator two char2! $1\n";
+			&push_current_word($1);
+			$current_pos += length($1);
+		}
+		elsif ($remaining_line =~ /^(\+\+|\-\-|\!|\~|\&|\*)/)
+		{
+			#/* 単項演算子 */
+#			print "Unary operator! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
@@ -2939,9 +2985,14 @@ sub analyze_if
 		$condition =~ s/^\((.+)\)$/$1/;
 	}
 
+
+	my $cont_size = CONT_SIZE;
+	$condition =~ s/\|\|/\|\|\n$cont_size/g;
+	$condition =~ s/\&\&/\&\&\n$cont_size/g;
 	if ($local_array[0] eq "else")
 	{
 		#/* else if文の場合は : 最後に追加されているであろうendifをpopしてしまう */
+		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
 		&push_pu_text("elseif (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
 	}
@@ -3161,7 +3212,8 @@ sub analyze_for
 #	print "for ($init_condition  $repeat_condition  $pre_repeat_exec)\n";
 
 	&push_pu_text("partition \"for loop\" {\n");
-	&push_pu_text(":$init_condition]\nwhile ($repeat_condition) is (Yes)\n");
+	&push_pu_text(":$init_condition]\n");
+	&push_pu_text("while ($repeat_condition) is (Yes)\n");
 	$current_sentence->backward($pre_repeat_exec);
 	&create_new_path("for");
 	return $loop;
@@ -3213,7 +3265,8 @@ sub analyze_while
 		($loop+1 < @local_array) or die "strange do while sentence1!\n";
 		$loop++;
 		($local_array[$loop] eq ";") or die "strange do while sentence2!\n";
-		&push_pu_text("repeat while (" . $condition . ") is (Yes) not (No)\n}\n");
+		&push_pu_text("repeat while (" . $condition . ") is (Yes) not (No)\n");
+		&push_pu_text("}\n");
 
 		#/* 親の実行PATHに復帰する */
 		&return_parent_path();
@@ -3241,6 +3294,7 @@ sub analyze_else
 	if ($loop + 1 >= @local_array)
 	{
 		#/* else文の処理 : 最後に追加されているであろうendifをpopしてしまう */
+		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
 		&push_pu_text("else (" . CONT_SIZE . "No)\n");
 		&create_new_path("else");
@@ -3444,60 +3498,6 @@ sub analyze_some_bracket
 }
 
 
-sub analyze_structs
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-	my $temp_text;
-
-#	print "analyze_structs $loop, @local_array\n";
-	$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
-	if ($loop + 1 == @local_array)
-	{
-		#/* 末尾だったら持ち越し */
-		$current_sentence->clear(0);
-		$current_sentence->position($loop);
-		return $loop;
-	}
-
-	if ($local_array[$loop + 1] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
-	{
-		#/* 構造体などのタグ名はここで処理する（まだ型は確定していない） */
-		$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
-		$loop++;
-	}
-
-	if ($loop + 1 == @local_array)
-	{
-		#/* 末尾だったらさらに持ち越し */
-		$current_sentence->clear(0);
-		$current_sentence->position($_[0]);
-		return $loop;
-	}
-
-	if ($local_array[$loop + 1] ne "{")
-	{
-		#/* 構造体の定義が始まらないようであれば、型を確定する */
-		$current_sentence->typ_fixed(1);
-	}
-	else
-	{
-		$loop = &analyze_some_bracket($loop + 1, \$temp_text);
-		if ($temp_text eq "")
-		{
-			#/* 空文だったら、次行に持ち越して処理継続する */
-			$current_sentence->clear(0);
-			$current_sentence->position($_[0]);
-			return @local_array - 1;
-		}
-	}
-
-	print "structs in function $loop, @local_array\n";
-#	&add_free_word($local_array[$loop]);
-	return $loop;
-}
-
-
 sub analyze_colon
 {
 	my $loop        = $_[0];
@@ -3527,7 +3527,12 @@ sub analyze_semicolon
 	my $path_type = $current_path->type;
 
 #	print "analyze semicolon ($path_type) $loop, @local_array\n";
-	($loop + 1 == @local_array) or die "strange semicolon!!!\n";
+	if ($loop + 1 != @local_array)
+	{
+		#/* 文の途中で出てくるセミコロンは無視。(おそらくは構造体へのキャスト) */
+		&add_free_word($local_array[$loop]);
+		return $loop;
+	}
 
 	if ($current_sentence->pu_text =~ /^\:/)
 	{
@@ -3544,7 +3549,8 @@ sub analyze_semicolon
 		     ($current_path->type eq "switch") )
 		{
 			print "never reach this sentence!!!!\n";
-			&push_pu_text("#HotPink:You cannot reach this sentence!\n" . substr($current_sentence->pu_text, 1));
+			&push_pu_text("#HotPink:You cannot reach this sentence!\n");
+			&push_pu_text(substr($current_sentence->pu_text, 1));
 			$current_sentence->pu_text("");
 		}
 	}
@@ -3554,6 +3560,7 @@ sub analyze_semicolon
 		&push_pu_text($current_sentence->pu_text);
 	}
 
+	#/* if文などで{}を使わないケースは、セミコロンでパス復帰する */
 	if ($current_path->indent == $global_data->indent)
 	{
 		if ( ($path_type ne "case") &&
@@ -3617,7 +3624,8 @@ sub analyze_bracket_close
 		     ($path_type eq "default") )
 		{
 			print "return from switch!\n";
-			&push_pu_text("endif\n}\n");
+			&push_pu_text("endif\n");
+			&push_pu_text("}\n");
 
 			if ($current_path->type ne "switch")
 			{
@@ -3644,6 +3652,7 @@ sub analyze_bracket_close
 	}
 	return $loop;
 }
+
 
 sub analyze_ternary
 {
@@ -3828,16 +3837,6 @@ sub analyze_formula_sentence
 #			print "analyze in func2 $loop, @local_array\n";
 			my $func = $analyze_in_funcs{$local_array[$loop]};
 			$loop = &$func($loop);
-		}
-		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
-		{
-			#/* 修飾子 */
-			print "modifier! $local_array[$loop]\n";
-		}
-		elsif ($local_array[$loop] =~ /^(struct|union|enum)$/)
-		{
-			$loop = &analyze_structs($loop);
-#			print "loop = $loop\n";
 		}
 		else
 		{
@@ -4054,15 +4053,16 @@ sub output_result
 
 		printf OUT_PU_OUT "start\n";
 		&output_path($path);
+		printf OUT_PU_OUT "footer auto-generated by c_analyze(https://github.com/Hakeem34/c_analyze)\n";
 		printf OUT_PU_OUT "\@enduml\n\n";
 		close(OUT_PU_OUT);
 		push @pu_files, $out_file;
 	}
 	
-	if ($pu_convert == 1)
+	if ($jar_path ne "")
 	{
 		print "do pu convert!!! @pu_files\n";
-		system("java -DPLANTUML_LIMIT_SIZE=8192 -jar plantuml.jar @pu_files")
+		system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
 	}
 
 	#/* 関数コールツリーの作成 */
@@ -4077,12 +4077,13 @@ sub output_result
 			&make_func_call_tree($function, 2);
 		}
 	}
+	printf OUT_FUNC_TREE "footer auto-generated by c_analyze(https://github.com/Hakeem34/c_analyze)\n";
 	printf OUT_FUNC_TREE "\@endmindmap\n";
 
-	if ($pu_convert == 1)
+	if ($jar_path ne "")
 	{
 		print "do pu convert!!! $out_file\n";
-		system("java -DPLANTUML_LIMIT_SIZE=8192 -jar plantuml.jar $out_file")
+		system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file")
 	}
 
 	close(OUT_FUNC_TREE);
@@ -4176,7 +4177,7 @@ sub push_pu_text
 	my $path_level = $current_path->level;
 	my $indent_tab = "\t" x $path_level;
 
-	$pu_text =~ s/\n([^\n])/\n$indent_tab$1/g;
+#	$pu_text =~ s/\n([^\n])/\n$indent_tab$1/g;
 	push @{$current_path->pu_text}, $indent_tab . $pu_text;
 }
 
@@ -4200,7 +4201,8 @@ sub return_parent_path
 	if ($path_type eq "if")
 	{
 #		print "return from if path : $current_path->pu_text\n";
-		&push_pu_text("else (" . CONT_SIZE . "No)\nendif\n");
+		&push_pu_text("else (" . CONT_SIZE . "No)\n");
+		&push_pu_text("endif\n");
 	}
 	elsif ($path_type eq "else")
 	{
@@ -4208,7 +4210,8 @@ sub return_parent_path
 	}
 	elsif ($path_type eq "while")
 	{
-		&push_pu_text("endwhile (No)\n}\n");
+		&push_pu_text("endwhile (No)\n");
+		&push_pu_text("}\n");
 	}
 	elsif ($path_type eq "for")
 	{
@@ -4225,7 +4228,8 @@ sub return_parent_path
 	{
 		#/* ここに来るのはcaseもdefaultもないswitch文！ */
 		print "switch sentence with no case or default!!!!\n";
-		&push_pu_text("#HotPink:No case or default label!]\n}\n");
+		&push_pu_text("#HotPink:No case or default label!]\n");
+		&push_pu_text("}\n");
 	}
 	elsif ( ($path_type eq "case") ||
 	        ($path_type eq "default") )
@@ -4443,6 +4447,11 @@ sub read_setting_file
 		{
 			print "add target include file $1\n";
 			&add_array_no_duplicate(\@target_include ,$1);
+		}
+		elsif ($line_text =~ /^plantuml[ \t]+([^\s]+)/)
+		{
+			print "plantuml.jar path specified.\n";
+			$jar_path = $1;
 		}
 	}
 	close(SETTING_IN);
