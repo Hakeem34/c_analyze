@@ -81,6 +81,8 @@ struct Path => {
 	lines      => '$',       #/* 行数                       */
 	type       => '$',       #/* パス種別                   */
 	texts      => '@',       #/* 原文                       */
+	pu_block   => '$',       #/* 処理ブロック               */
+	call_block => '$',       #/* ブロック内の関数コール有無 */
 	pu_text    => '@',       #/* アクティビティ図用         */
 	steps      => '$',       #/* 実効ステップ数             */
 	parent     => '$',       #/* 親パス                     */
@@ -886,7 +888,7 @@ sub line_define_parse
 	}
 
 	#/* プリプロセッサの処理 */
-	print "define parse : $local_line";
+#	print "define parse : $local_line";
 	foreach $prepro (@c_prepro_word)
 	{
 		if ($local_line =~/#\s*$prepro/)
@@ -2221,7 +2223,7 @@ sub analyze_global_first_word
 			if ($loop == 0)
 			{
 				#/* 無意味な ; */
-				print "; without sentence!\n";
+#				print "; without sentence!\n";
 			}
 			else
 			{
@@ -2635,6 +2637,9 @@ sub analyze_global_line
 #/* 親パスに復帰させる */
 sub pop_path
 {
+	#/* パス復帰する前に現在のpu_blockを吐き出す */
+	&push_pu_text("");
+
 	$current_path = $current_path->parent;
 	pop @path_stack;
 }
@@ -2664,6 +2669,8 @@ sub new_path
 	$temp_path->type($path_type);
 	$temp_path->backward($current_sentence->backward);
 	$temp_path->switch_val($current_sentence->switch_val);
+	$temp_path->pu_block("");
+	$temp_path->call_block(0);
 	@{$temp_path->texts}     = ();
 	@{$temp_path->pu_text}   = ();
 	@{$temp_path->var_read}  = ();
@@ -2707,6 +2714,7 @@ sub new_function
 	$current_function->ret_typ($typ);
 	$current_function->lines(1);
 	$current_function->comment(0);
+	$current_function->steps(0);
 	$current_function->make_tree(0);
 
 	if ($current_brief ne "")
@@ -2915,13 +2923,20 @@ sub add_free_word
 {
 	my $add_word = $_[0];
 
-	if ($current_sentence->pu_text eq "")
+	if ($current_path->pu_block eq "")
 	{
-		$current_sentence->pu_text(":" . $add_word);
+		if ($add_word ne "\n")
+		{
+			$current_path->pu_block($add_word);
+		}
+	}
+	elsif ($add_word eq "\n")
+	{
+		$current_path->pu_block($current_path->pu_block . "\n");
 	}
 	else
 	{
-		$current_sentence->pu_text($current_sentence->pu_text . " " . $add_word);
+		$current_path->pu_block($current_path->pu_block . " " . $add_word);
 	}
 }
 
@@ -2946,6 +2961,7 @@ sub analyze_round_bracket_open
 			print "function call! $symbol_name()\n";
 			&add_function_call($symbol_name);
 			$current_sentence->func_call(1);
+			$current_path->call_block(1);
 		}
 	}
 
@@ -2992,6 +3008,7 @@ sub analyze_if
 	if ($local_array[0] eq "else")
 	{
 		#/* else if文の場合は : 最後に追加されているであろうendifをpopしてしまう */
+#		print "analyze else if!\n";
 		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
 		&push_pu_text("elseif (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
@@ -3072,8 +3089,8 @@ sub analyze_break
 		     ($current_path->type eq "default") )
 		{
 			#/* 残念ながら、if elseの両方でbreakした場合などは、拾えません */
+			&push_pu_text("");
 			$current_path->break(1);
-#			&push_pu_text(":break}\n");				#/* これは冗長に見えるので入れない */
 		}
 	}
 
@@ -3294,6 +3311,7 @@ sub analyze_else
 	if ($loop + 1 >= @local_array)
 	{
 		#/* else文の処理 : 最後に追加されているであろうendifをpopしてしまう */
+#		print "analyze else!\n";
 		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
 		&push_pu_text("else (" . CONT_SIZE . "No)\n");
@@ -3534,30 +3552,9 @@ sub analyze_semicolon
 		return $loop;
 	}
 
-	if ($current_sentence->pu_text =~ /^\:/)
+	if ($current_path->pu_block ne "")
 	{
-		if ($current_sentence->func_call == 0)
-		{
-			$current_sentence->pu_text($current_sentence->pu_text . "]\n");
-		}
-		else
-		{
-			$current_sentence->pu_text($current_sentence->pu_text . "|\n");
-		}
-
-		if ( ($current_path->break == 1) ||
-		     ($current_path->type eq "switch") )
-		{
-			print "never reach this sentence!!!!\n";
-			&push_pu_text("#HotPink:You cannot reach this sentence!\n");
-			&push_pu_text(substr($current_sentence->pu_text, 1));
-			$current_sentence->pu_text("");
-		}
-	}
-
-	if ($current_sentence->pu_text ne "")
-	{
-		&push_pu_text($current_sentence->pu_text);
+		&add_free_word("\n");
 	}
 
 	#/* if文などで{}を使わないケースは、セミコロンでパス復帰する */
@@ -3595,6 +3592,7 @@ sub analyze_bracket_close
 	$global_data->indent($global_data->indent - 1);
 	if ($global_data->indent == 0)
 	{
+		&push_pu_text("");
 		$global_data->in_function(0);
 		push @{$current_function->texts}, $current_sentence->text;
 		push @{$current_path->texts}, $current_sentence->text;
@@ -3623,7 +3621,7 @@ sub analyze_bracket_close
 		if ( ($path_type eq "case") ||
 		     ($path_type eq "default") )
 		{
-			print "return from switch!\n";
+			print "return to switch path!\n";
 			&push_pu_text("endif\n");
 			&push_pu_text("}\n");
 
@@ -3646,9 +3644,9 @@ sub analyze_bracket_close
 	}
 	else
 	{
-		printf "current_path->type = %s\n", $current_path->type;
-		printf "current_path->indent = %d\n", $current_path->indent;
-		printf "indent_level = " . $global_data->indent . "\n";
+#		printf "current_path->type = %s\n", $current_path->type;
+#		printf "current_path->indent = %d\n", $current_path->indent;
+#		printf "indent_level = " . $global_data->indent . "\n";
 	}
 	return $loop;
 }
@@ -4176,9 +4174,44 @@ sub push_pu_text
 	my $pu_text = $_[0];
 	my $path_level = $current_path->level;
 	my $indent_tab = "\t" x $path_level;
+	my $block_text = "";
 
 #	$pu_text =~ s/\n([^\n])/\n$indent_tab$1/g;
-	push @{$current_path->pu_text}, $indent_tab . $pu_text;
+
+#	print "push_pu_text : $pu_text";
+	if ($current_path->pu_block ne "")
+	{
+		if ( ($current_path->break == 1) ||
+		     ($current_path->type eq "switch") )
+		{
+			print "never reach this block!!!!\n";
+			$block_text = "#HotPink:You cannot reach this block!\n" . $current_path->pu_block;
+		}
+		else
+		{
+			$block_text = ":" . $current_path->pu_block;
+		}
+
+		#/* 末尾の改行をブロックの終端に置き換える */
+		if ($current_path->call_block)
+		{
+			$block_text =~ s/\n$/|\n/
+		}
+		else
+		{
+			$block_text =~ s/\n$/]\n/
+		}
+
+#		print "push pu_block!!!\n";
+		push @{$current_path->pu_text}, $indent_tab . $block_text;
+		$current_path->pu_block("");
+		$current_path->call_block(0);
+	}
+
+	if ($pu_text ne "")
+	{
+		push @{$current_path->pu_text}, $indent_tab . $pu_text;
+	}
 }
 
 
