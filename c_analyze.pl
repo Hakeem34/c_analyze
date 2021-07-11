@@ -50,6 +50,15 @@ struct GlobalInfo => {
 };
 
 
+#/* マクロ */
+struct Macros => {
+	name         => '$',       #/* マクロ名                   */
+	value        => '$',       #/* 定義内容                   */
+	is_func      => '$',       #/* 関数かどうか               */
+	args         => '@',       #/* 引数                       */
+};
+
+
 #/* 関数を表す構造体 */
 struct Functions => {
 	name	   => '$',       #/* 関数名                     */
@@ -175,8 +184,7 @@ my $indent_level = 0;
 my @valid_line = (1);
 my @once_valid = (1);
 my $nest_level   = 0;
-my @valid_define_name  = ();		#/* 有効なdefine値を列挙 */
-my @valid_define_value = ();
+my @macros = ();
 
 #/* C言語の解析に使う変数 */
 my @include_files  = ();
@@ -218,8 +226,7 @@ sub init_variables
 	$is_single_comment = 0;
 	$is_literal = 0;
 	$line_postpone = "";
-	@valid_define_name  = ();		#/* 有効なdefine値を列挙 */
-	@valid_define_value = ();
+	@macros = ();
 	@include_files  = ();
 	@global_variables = ();
 	@functions = ();
@@ -715,13 +722,13 @@ sub comment_parse
 
 
 #/* 有効なdefineマクロかどうか */
-sub is_valid_define_name
+sub is_valid_macro
 {
 	my $define;
 
-	foreach $define (@valid_define_name)
+	foreach $define (@macros)
 	{
-		if ($_[0] eq $define)
+		if ($_[0] eq $define->name)
 		{
 			return 1;
 		}
@@ -798,20 +805,129 @@ sub line_backslash_parse
 }
 
 
+#/* 置き換えたリテラルを復元する */
+sub restore_literal
+{
+	my $text  = $_[0];
+	
+	while ($text =~ /__C_ANALYZE_LITERALS_([0-9]+)/)
+	{
+		my $literal = $literals[$1];
+		$text =~ s/__C_ANALYZE_LITERALS_$1/$literal/;
+	}
+
+	return $text;
+}
+
+
+#/* (), {}, []などのネストを考慮して内部を抽出する */
+sub extract_bracket_text
+{
+	my $text  = $_[0];
+	my $open  = $_[1];
+	my $close = $_[2];
+	my $count = 1;
+	my $position = 0;
+
+	my $open_idx;
+	my $close_idx;
+
+	while ($count > 0)
+	{
+		$open_idx = index($text, $open, $position);
+		$close_idx = index($text, $close, $position);
+
+		($close_idx >= 0) or die "not closed bracket! $text $open $close\n";
+		if (($open_idx == -1) ||
+			($open_idx > $close_idx))
+		{
+			$count--;
+			$position = $close_idx + 1;
+		}
+		else
+		{
+			$count++;
+			$position = $open_idx + 1;
+		}
+	}
+
+#	print "extract_bracket! $position, $text\n";
+	return substr($text, 0, $position - 1);
+}
+
 #/* defineマクロの置き換え実施 */
-sub replace_define
+sub replace_macro
 {
 	my $text  = $_[0];
 	my $define;
 	my $value;
 	my $index;
 	my $count;
+	my @args;
 
-#	print "replace [$text] to ";
-	$count = @valid_define_name;
+#	print "replace [$text] to\n";
+	$count = @macros;
 	for ($index = 0; $index < $count; $index++)
 	{
-		$text =~ s/$valid_define_name[$index]/$valid_define_value[$index]/g;
+		$define = $macros[$index]->name;
+		$value  = $macros[$index]->value;
+		@args   = @{$macros[$index]->args};
+
+		if ($macros[$index]->is_func == 1)
+		{
+#			print "$define is MACRO FUNC! : $text\n";
+			my $parameter;
+			my @parameters;
+			my $argument;
+			my $loop;
+			if ($text =~ /($define\s*\()/)
+			{
+				my $replace = $1;
+
+				#/* まず引数のテキストを抽出する */
+				$parameter = &extract_bracket_text($', "\(", "\)");
+#				print "MACRO FUNC CALL! $define($parameter)\n";
+				$replace = $replace . $parameter . ")";
+#				print "MACRO FUNC CALL! $replace\n";
+
+				#/* 続いて引数をばらして配列に格納 */
+				@parameters = &analyze_parameter_list($parameter);
+
+#				print "value before @parameters : $value\n";
+				for ($loop = 0; $loop < @{$macros[$index]->args}; $loop++)
+				{
+					$argument = $args[$loop];
+#					print "arg : $argument, param : $parameters[$loop]\n";
+					$value =~ s/$argument/$parameters[$loop]/g;
+				}
+#				print "value after @parameters : $value\n";
+
+				#/* マクロ全体を置き換え */
+#				print "macro is $define\($parameter\)\n";
+#				print "value is $value\n";
+#				print "text before $text\n";
+				if ($text =~ /$define\s*\($parameter\)/)
+				{
+#					print "hit macro1!!!!!\n";
+				}
+				if (index($text, $replace) >= 0)
+				{
+#					print "hit macro2!!!!!\n";
+					substr($text,  index($text, $replace), length($replace), $value);
+				}
+				if (index($text, "$define($parameter)") >= 0)
+				{
+#					print "hit macro3!!!!!\n";
+				}
+				
+				$text =~ s/$define\s*\($parameter\)/$value/g;
+#				print "text after  $text\n";
+			}
+		}
+		else
+		{
+			$text =~ s/$define/$value/g;
+		}
 	}
 #	print "[$text]\n";
 
@@ -819,50 +935,107 @@ sub replace_define
 }
 
 
+#/* ,で区切られた引数リストを識別して配列で返す */
+sub analyze_parameter_list
+{
+	my $text  = $_[0];
+	my @ret_val = ();
+
+	if ($text =~ /#/)
+	{
+		die "stray '#' in program($text)\n";
+	}
+
+	while ($text =~ /([^,]+),/)
+	{
+#		print "macro param $1\n";
+		push @ret_val, $1;
+		$text = substr($text, index($text, ",") + 1);
+	}
+
+#	print "macro param $text\n";
+	push @ret_val, $text;
+	return @ret_val;
+}
+
+
+#/* マクロ仮引数の解析 */
+sub analyze_macro_arg_list
+{
+	my $text  = $_[0];
+	my @ret_val = ();
+
+	while ($text =~ /([_A-Za-z][_A-Za-z0-9]*)\s*,/)
+	{
+		push @ret_val, $1;
+		$text = substr($text, index($text, ",") + 1);
+	}
+
+	if ($text =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+	{
+		push @ret_val, $1;
+	}
+	elsif ($text =~ /\.\.\./)
+	{
+		push @ret_val, "...";
+	}
+
+	return @ret_val;
+}
+
+
 #/* マクロ定義の追加処理 */
-sub add_valid_define
+sub new_macro
 {
 	my $name  = $_[0];
 	my $value = $_[1];
-	my $define;
+	my $args =  $_[2];
+	my $defined;
+	my $local_macro;
 	my $index;
-	my $count = @valid_define_name;
 
-	foreach $define (@valid_define_name)
+	foreach $defined (@macros)
 	{
-		if ($define eq $name)
+		if ($defined->name eq $name)
 		{
-#			print "Already defined!\n";
 			return;
 		}
 	}
 
-	if ($count == 0)
+	$local_macro = Macros->new();
+	$local_macro->name($name);
+	$local_macro->value($value);
+	if ($args eq "")
 	{
-		#/* 要素0ならとにかくPush */
-#		print "new define1! $name, $value\n";
-		push @valid_define_name,  $name;
-		push @valid_define_value, $value;
+		$local_macro->is_func(0);
+		@{$local_macro->args} = ();
 	}
 	else
 	{
-	
-		for ($index = 0; $index < $count; $index++)
+#		print "new MACRO FUNC! $name($args)\n";
+		$local_macro->is_func(1);
+		@{$local_macro->args} = &analyze_macro_arg_list($args);
+#		printf("macro args : @{$local_macro->args}\n");
+	}
+
+	if (@macros == 0)
+	{
+		push @macros, $local_macro;
+	}
+	else
+	{
+		for ($index = 0; $index < @macros; $index++)
 		{
-			if (length($valid_define_name[$index]) < length($name))
+			if (length($macros[$index]->name) < length($name))
 			{
 				#/* 長い順にソートして配列にしていく */
-#				print "new define2! $name, $value\n";
-				splice(@valid_define_name,  $index, 0, $name);
-				splice(@valid_define_value, $index, 0, $value);
+				splice(@macros,  $index, 0, $local_macro);
 				return;
 			}
 		}
 
 		#/* 最短であった場合は末尾に足す */
-#		print "new define3! $name, $value\n";
-		push @valid_define_name,  $name;
-		push @valid_define_value, $value;
+		push @macros, $local_macro;
 	}
 }
 
@@ -902,13 +1075,13 @@ sub line_define_parse
 				$local_line =~ s/(#$prepro)([\-\!\+])/$1 $2/;
 			}
 			
-			if ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\(([^\)]*)\)(.*)\n/)
+			if ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\(([^\)]*)\)\s+(.*)\n/)
 			{
 				my $macro_name = $1;
 				my $second_part = $3;
 
 #				print "#define macro func! $macro_name($2) : $3\n";
-				add_valid_define("$macro_name($2)", $3);
+				&new_macro("$macro_name", $3, $2);
 				&output_line($local_line);
 			}
 			elsif ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)\n/)
@@ -919,17 +1092,8 @@ sub line_define_parse
 					my $macro_name = $1;
 					my $second_part = $2;
 					
-					if ($second_part =~ /\#/)
-					{
-						print "invalid define value! $macro_name : $second_part\n";
-						add_valid_define($macro_name, "");
-					}
-					else
-					{
-#						print "#define macro! $macro_name : $second_part\n";
-						add_valid_define($macro_name, $second_part);
-					}
-
+#					print "#define macro! $macro_name : $second_part\n";
+					&new_macro($macro_name, $second_part, "");
 					&output_line($local_line);
 				}
 			}
@@ -939,7 +1103,7 @@ sub line_define_parse
 				if ($valid_now == 1)
 				{
 #					print "#define macro only! $1\n";
-					add_valid_define($1, "");
+					&new_macro($1, "", "");
 
 					&output_line($local_line);
 				}
@@ -951,13 +1115,11 @@ sub line_define_parse
 				{
 					my $index;
 #					print "\#undef! $1\n";
-
-					for ($index = 0; $index < @valid_define_name; $index++)
+					for ($index = 0; $index < @macros; $index++)
 					{
-						if ($valid_define_name[$index] eq $1)
+						if ($macros[$index]->name eq $1)
 						{
-							splice @valid_define_name,  $index, 1;
-							splice @valid_define_value, $index, 1;
+							splice @macros, $index, 1;
 							&output_line($local_line);
 							return;
 						}
@@ -971,7 +1133,7 @@ sub line_define_parse
 			{
 				my $result;
 #				print "#ifdef $1\n";
-				$result = is_valid_define_name($1);
+				$result = is_valid_macro($1);
 				if ($result == 1)
 				{
 					push_valid_nest(1);
@@ -985,7 +1147,7 @@ sub line_define_parse
 			{
 				my $result;
 #				print "#ifndef $1\n";
-				$result = is_valid_define_name($1);
+				$result = is_valid_macro($1);
 				if ($result == 0)
 				{
 					push_valid_nest(1);
@@ -1081,7 +1243,8 @@ sub line_define_parse
 			{
 				if ($valid_now == 1)
 				{
-					die "#error in valid line!\n";
+					$local_line = &restore_literal($local_line);
+					die "#error in valid line! : $local_line";
 				}
 #				print "#error! $1\n";
 			}
@@ -1181,16 +1344,21 @@ sub line_parse_1st
 		return;
 	}
 
-
-	$local_line = $line_postpone . $_[0];
-	$line_postpone = "";
-
 	if ($local_line =~ /^\s*\#/)
 	{
 		#/* ディレクティブは除外 */
+		if ($line_postpone ne "")
+		{
+			#/* 持ち越しながらディレクティブが始まる場合は、マクロなど特殊な記述になっているので、改行して区切る */
+			&output_line($line_postpone . "\n");
+			$line_postpone = "";
+		}
 	}
 	else
 	{
+		$local_line = $line_postpone . $local_line;
+		$line_postpone = "";
+
 		if ($local_line =~ /([^\;\{\}])\s*\n/)
 		{
 			#/* ; か { か } で終わってない行は、スペース1個空けて連結する */
@@ -1330,23 +1498,6 @@ sub line_parse_2nd
 }
 
 
-
-#/* マクロ定義の一覧表示 */
-sub print_defines
-{
-	my $index;
-	for ($index = 0; $index < @valid_define_name; $index++)
-	{
-		print "define[$index] $valid_define_name[$index] : $valid_define_value[$index]\n";
-	}
-
-	for ($index = 0; $index < @literals; $index++)
-	{
-		print "literals[$index] : $literals[$index]\n";
-	}
-}
-
-
 #/* 四則演算の計算 */
 sub calc_text
 {
@@ -1361,7 +1512,7 @@ sub calc_text
 	#/* definedの処理 */
 	while ($text =~ /defined[\s\(]+([_A-Za-z][_A-Za-z0-9]*)[\s\)]+/)
 	{
-		$result = is_valid_define_name($1);
+		$result = is_valid_macro($1);
 		if ($result == 1)
 		{
 #			print "defined $1\n";
@@ -1375,7 +1526,7 @@ sub calc_text
 	}
 
 	#/* ここでマクロの置き換えを実施 */
-	$text = replace_define($text);
+	$text = replace_macro($text);
 #	print "calc2 $text\n";
 
 	while ($text =~ /0x([0-9a-fA-F]+)/)
@@ -1459,6 +1610,17 @@ sub calc_text
 		$text =~ s/([\+\-]?[0-9]+)\s*\/\s*([\+\-]?[0-9]+)/$result/;
 #		print "re calc $text\n";
 	}
+
+	#/* 単項の+-を処理 */
+#	print "+- reduce0 : $text\n";
+	$text =~ s/\+\s+\+/ \+/g;
+#	print "+- reduce1 : $text\n";
+	$text =~ s/\+\s*\-/ \-/g;
+#	print "+- reduce2 : $text\n";
+	$text =~ s/\-\s*\+/ \-/g;
+#	print "+- reduce3 : $text\n";
+	$text =~ s/\-\s+\-/ \+/g;
+#	print "+- reduce4 : $text\n";
 
 	#/* 加算の処理 */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\+\s*([0-9]+)/)
@@ -2487,6 +2649,17 @@ sub analyze_global_second_word
 
 					$current_sentence->init_val(&add_word_to_text($current_sentence->init_val, $temp_text));
 				}
+				elsif ($local_array[$loop] eq "(")
+				{
+					$loop = &analyze_some_bracket($loop, \$temp_text);
+					if ($temp_text eq "")
+					{
+						#/* 空文だったら、次行に持ち越して = から処理継続する */
+						return $loop - 1;
+					}
+
+					$current_sentence->init_val(&add_word_to_text($current_sentence->init_val, $temp_text));
+				}
 				elsif ($local_array[$loop] eq ",")
 				{
 					$loop--;
@@ -2757,7 +2930,7 @@ sub new_function
 
 
 
-#/* 関数の引数解析処理(戻り値は引数リストを閉じる)のインデックス) */
+#/* 関数の仮引数解析処理(戻り値は引数リストを閉じる)のインデックス) */
 sub analyze_arg_list
 {
 #	my @local_array = @{$current_sentence->words};
@@ -3715,7 +3888,7 @@ sub analyze_function_sentence_type
 	}
 	elsif ($word =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 	{
-		(@local_array > 1) or die "strange sentence!\n";
+		(@local_array > 1) or die "strange sentence0!\n";
 
 		if ($local_array[1] eq ":")
 		{
@@ -4461,15 +4634,23 @@ sub read_setting_file
 		my $line_text = $_;
 #		print $line_text;
 
-		if ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\s]+)/)
+		if ($line_text =~ /^define\s+([A-Za-z_][A-Za-z0-9_]*)\(([^\)]*)\)\s+(.*)\n/)
+		{
+			my $macro_name = $1;
+			my $second_part = $3;
+
+			print "define macro func $macro_name($2) : $3\n";
+			&new_macro("$macro_name", $3, $2);
+		}
+		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\s]+)/)
 		{
 			print "define $1 as $2\n";
-			add_valid_define($1, $2);
+			&new_macro($1, $2, "");
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]*/)
 		{
 			print "define $1\n";
-			add_valid_define($1, "");
+			&new_macro($1, "", "");
 		}
 		elsif ($line_text =~ /^incpath[ \t]+([^\s]+)/)
 		{
