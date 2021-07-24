@@ -1,0 +1,37 @@
+#############################################################################
+# C analyze setting file
+#############################################################################
+
+###################################################
+# plantumlのjarファイルパスを指定してください。
+# 省略した場合は、puファイルの変換を行いません
+
+plantuml C:\Users\tkubo\.vscode\extensions\jebbs.plantuml-2.15.1\plantuml.jar
+
+
+
+###################################################
+# 解析対象のソースコード外で定義されているマクロを
+# ここで定義することが可能です。￥は使用不可です。
+
+define TRUE  (1)
+define FALSE (0)
+define AP_DECLARE(type)            type
+define AP_DECLARE_NONSTD(type)     type
+define AP_CORE_DECLARE        AP_DECLARE
+define AP_CORE_DECLARE_NONSTD AP_DECLARE_NONSTD
+define AP_INIT_RAW_ARGS(directive, func, mconfig, where, help)  { directive, func, mconfig, where, RAW_ARGS, help }
+define MY_MACRO_FUNC_DECLARE(function)   int function(int arg)
+
+
+###################################################
+# extractで指定されたマクロは解析前に展開されます。
+# それ以外のマクロは展開されません
+
+extract AP_DECLARE
+extract AP_DECLARE_NONSTD
+extract AP_CORE_DECLARE
+extract AP_CORE_DECLARE_NONSTD
+extract AP_INIT_RAW_ARGS
+extract MY_MACRO_FUNC_DECLARE
+
