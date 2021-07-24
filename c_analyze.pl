@@ -163,6 +163,7 @@ struct CurrentSentence => {
 my @c_prepro_word = ("include", "define", "undef", "pragma", "else", "endif", "elif", "ifdef", "ifndef", "error", "if");
 my $output_fld = "c_analyze";
 my @include_paths  = ();
+my @extracts  = ();
 my @target_include = ();
 my @target_files = ();
 my $setting_file = "c_analyze_setting.txt";
@@ -753,6 +754,59 @@ sub is_comment_line
 }
 
 
+sub check_bracket_close
+{
+	my $text  = $_[0];
+	my $open  = $_[1];
+	my $close = $_[2];
+	my $position = 0;
+	my $count = 0;
+	my $open_idx;
+	my $close_idx;
+
+	while (1)
+	{
+		$open_idx = index($text, $open, $position);
+		$close_idx = index($text, $close, $position);
+		if ( ($open_idx < 0) && ($close_idx < 0) )
+		{
+			#/* 括弧がなくなればOK */
+			return ($count == 0);
+		}
+		else
+		{
+			if ($open_idx < 0)
+			{
+				#/* Closeだけが残っている場合 */
+				$count--;
+				$position = $close_idx + 1;
+			}
+			elsif ($close_idx < 0)
+			{
+				#/* Openだけが残っている場合。継続するまでもなく、クローズしていない */
+				return 0;
+			}
+			else
+			{
+				#/* Open, Close両方が残っている場合 */
+				if ($open_idx < $close_idx)
+				{
+					$count++;
+					$position = $open_idx + 1;
+				}
+				else
+				{
+					$count--;
+					$position = $close_idx + 1;
+				}
+			}
+
+			#/* 途中でカウントがマイナスになったらおかしい！ */
+			($count >= 0) or die "strange bracket count!\n";
+		}
+	}
+}
+
 #/* \による行連結を解除 */
 sub line_backslash_parse
 {
@@ -788,10 +842,6 @@ sub line_backslash_parse
 				#/* ; か : か { か } で終わっている行は、末尾のスペースを除去 */
 #				print "not joint $local_line\n";
 				$local_line =~ s/([\;\:\{\}])\s*\n/$1\n/
-			}
-			else
-			{
-#				print "What? $local_line\n";
 			}
 		}
 	}
@@ -855,10 +905,29 @@ sub extract_bracket_text
 	return substr($text, 0, $position - 1);
 }
 
+
+sub check_extracts
+{
+	my $text = $_[0];
+	my $check = "";
+
+	foreach $check (@extracts)
+	{
+		if ($check eq $text)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+
 #/* defineマクロの置き換え実施 */
 sub replace_macro
 {
-	my $text  = $_[0];
+	my $text          = $_[0];
+	my $only_extracts = $_[1];       #/* 指定されたマクロのみを展開するかどうか */
 	my $define;
 	my $value;
 	my $index;
@@ -872,6 +941,15 @@ sub replace_macro
 		$define = $macros[$index]->name;
 		$value  = $macros[$index]->value;
 		@args   = @{$macros[$index]->args};
+		
+		if ($only_extracts)
+		{
+			if (check_extracts($define) == 0)
+			{
+				#/* 展開対象に指定されていなければ、スキップする */
+				next;
+			}
+		}
 
 		if ($macros[$index]->is_func == 1)
 		{
@@ -906,6 +984,7 @@ sub replace_macro
 #				print "macro is $define\($parameter\)\n";
 #				print "value is $value\n";
 #				print "text before $text\n";
+				$parameter  = quotemeta($parameter);
 				if ($text =~ /$define\s*\($parameter\)/)
 				{
 #					print "hit macro1!!!!!\n";
@@ -1212,7 +1291,7 @@ sub line_define_parse
 					else
 					{
 						#/* 数値のみ */
-						print "numeric! $result\n";
+#						print "numeric! $result\n";
 						if ($result == 0)
 						{
 #							print "invalid #if\n";
@@ -1260,7 +1339,20 @@ sub line_define_parse
 
 	if ($valid_now == 1)
 	{
-		&output_line($local_line);
+		$local_line = $line_postpone . $_[0];
+		$line_postpone = "";
+
+		if (check_bracket_close($local_line, "(", ")"))
+		{
+			$local_line = replace_macro($local_line, 1);
+			&output_line($local_line);
+		}
+		else
+		{
+			#/* ()が閉じていない行は連結する */
+			$local_line =~ s/\n//;
+			$line_postpone = $local_line;
+		}
 	}
 }
 
@@ -1526,7 +1618,7 @@ sub calc_text
 	}
 
 	#/* ここでマクロの置き換えを実施 */
-	$text = replace_macro($text);
+	$text = replace_macro($text, 0);
 #	print "calc2 $text\n";
 
 	while ($text =~ /0x([0-9a-fA-F]+)/)
@@ -2323,7 +2415,13 @@ sub analyze_global_first_word
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			$current_sentence->typ_fixed(1);
 		}
-		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|unsigned|signed|auto)$/)
+		elsif ($local_array[$loop] =~ /^(unsigned|signed)$/)
+		{
+			#/* unsigned, signedの後ろのintは省略可 */
+			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+			$current_sentence->typ_fixed(1);
+		}
+		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|auto)$/)
 		{
 			#/* 型の修飾子 */
 #			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
@@ -2517,7 +2615,7 @@ sub analyze_global_round_bracket
 		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
 		{
 			#/* 既存の型が来た場合は、戻り値の型を省略した関数の宣言ということになるが、不許可！ */
-			die "omitted return type is forbidden! case 1\n";
+			die "omitted return type is forbidden! case 1  $loop, @local_array\n";
 		}
 		elsif ($local_array[$loop] eq ",")
 		{
@@ -3304,7 +3402,7 @@ sub analyze_return
 
 	if ($ret_val ne "")
 	{
-		&push_pu_text(":return value : $ret_val]\n");
+		&push_pu_text(":return $ret_val;\n");
 #		print "return! value : $ret_val\n";
 	}
 	else
@@ -3364,46 +3462,54 @@ sub analyze_for
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
+#	print "analyze for! : @local_array\n";
 	#/* for文 */
 	my $init_condition;
 	my $repeat_condition;
 	my $pre_repeat_exec;
 
 	#/* 初期化条件 */
-	$init_condition = $local_array[$loop + 2];
-	$loop += 3;
+	$init_condition = "";
+	$loop += 2;
 	while ($local_array[$loop] ne ";")
 	{
 		$init_condition = $init_condition . $local_array[$loop];
 		$loop++;
 	}
-	$init_condition = $init_condition . $local_array[$loop];
 
 
 	#/* 実行条件 */
-	$repeat_condition = $local_array[$loop + 1];
-	$loop += 2;
+	$repeat_condition = "";
+	$loop += 1;
 	while ($local_array[$loop] ne ";")
 	{
 		$repeat_condition = $repeat_condition . $local_array[$loop];
 		$loop++;
 	}
 
-
 	#/* 繰り返し処理 */
-	$pre_repeat_exec = $local_array[$loop + 1];
-	$loop += 2;
+	$pre_repeat_exec = "";
+	$loop += 1;
 	while ($local_array[$loop] ne ")")
 	{
 		$pre_repeat_exec = $pre_repeat_exec . $local_array[$loop];
 		$loop++;
 	}
-	$pre_repeat_exec = $pre_repeat_exec . ";";
+
 #	print "for ($init_condition  $repeat_condition  $pre_repeat_exec)\n";
 
 	&push_pu_text("partition \"for loop\" {\n");
-	&push_pu_text(":$init_condition]\n");
-	&push_pu_text("while ($repeat_condition) is (Yes)\n");
+	if ($init_condition ne "")
+	{
+		&push_pu_text(":$init_condition]\n");
+	}
+
+	if ($repeat_condition eq "")
+	{
+		$repeat_condition = "TRUE";
+	}
+
+	&push_pu_text("while (" . CONT_SIZE . "$repeat_condition) is (" . CONT_SIZE . "Yes)\n");
 	$current_sentence->backward($pre_repeat_exec);
 	&create_new_path("for");
 	return $loop;
@@ -3455,7 +3561,7 @@ sub analyze_while
 		($loop+1 < @local_array) or die "strange do while sentence1!\n";
 		$loop++;
 		($local_array[$loop] eq ";") or die "strange do while sentence2!\n";
-		&push_pu_text("repeat while (" . $condition . ") is (Yes) not (No)\n");
+		&push_pu_text("repeat while (" . CONT_SIZE . $condition . ") is (" . CONT_SIZE . "Yes) not (" . CONT_SIZE . "No)\n");
 		&push_pu_text("}\n");
 
 		#/* 親の実行PATHに復帰する */
@@ -3465,7 +3571,7 @@ sub analyze_while
 	else
 	{
 		&push_pu_text("partition \"while loop\" {\n");
-		&push_pu_text("while (" . $condition . ") is (Yes)\n");
+		&push_pu_text("while (" . CONT_SIZE . $condition . ") is (" . CONT_SIZE . "Yes)\n");
 		&create_new_path("while");
 	}
 
@@ -4354,6 +4460,7 @@ sub push_pu_text
 #	print "push_pu_text : $pu_text";
 	if ($current_path->pu_block ne "")
 	{
+		#/* pu_blockのテキストが溜まっていれば、先に出力する */
 		if ( ($current_path->break == 1) ||
 		     ($current_path->type eq "switch") )
 		{
@@ -4366,13 +4473,15 @@ sub push_pu_text
 		}
 
 		#/* 末尾の改行をブロックの終端に置き換える */
-		if ($current_path->call_block)
+		if ( ($current_path->call_block == 0) ||
+			 ($block_text =~ /\|/) )
 		{
-			$block_text =~ s/\n$/|\n/
+			#/* 関数コールを含むブロックは|を使って二重線のブロックにするが、文中に|が含まれている場合は、PlantUMLがsyntax errorを起こすので回避する */
+			$block_text =~ s/\n$/]\n/
 		}
 		else
 		{
-			$block_text =~ s/\n$/]\n/
+			$block_text =~ s/\n$/|\n/
 		}
 
 #		print "push pu_block!!!\n";
@@ -4416,14 +4525,18 @@ sub return_parent_path
 	}
 	elsif ($path_type eq "while")
 	{
-		&push_pu_text("endwhile (No)\n");
+		&push_pu_text("endwhile (" . CONT_SIZE . "No)\n");
 		&push_pu_text("}\n");
 	}
 	elsif ($path_type eq "for")
 	{
 		#/* for文の終わりには繰り返し前の処理とendwhileを挿入する */
-		&push_pu_text("backward :$backward_text]\n");
-		&push_pu_text("endwhile (No)\n");
+		if ($backward_text ne "")
+		{
+			&push_pu_text("backward :$backward_text]\n");
+		}
+
+		&push_pu_text("endwhile (" . CONT_SIZE . "No)\n");
 		&push_pu_text("}\n");
 	}
 	elsif ($path_type eq "do")
@@ -4614,7 +4727,8 @@ sub output_path
 		}
 		else
 		{
-			printf OUT_PU_OUT "$text";
+			$text = restore_literal($text);
+			print OUT_PU_OUT $text;
 		}
 	}
 }
@@ -4639,7 +4753,7 @@ sub read_setting_file
 			my $macro_name = $1;
 			my $second_part = $3;
 
-			print "define macro func $macro_name($2) : $3\n";
+			print "define $macro_name($2) : $3\n";
 			&new_macro("$macro_name", $3, $2);
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\s]+)/)
@@ -4656,6 +4770,11 @@ sub read_setting_file
 		{
 			print "include path $1\n";
 			&add_array_no_duplicate(\@include_paths ,$1);
+		}
+		elsif ($line_text =~ /^extract[ \t]+([_A-Za-z][_A-Za-z0-9]*)/)
+		{
+			print "extract $1\n";
+			&add_array_no_duplicate(\@extracts ,$1);
 		}
 		elsif ($line_text =~ /^include[ \t]+([^\s]+)/)
 		{
