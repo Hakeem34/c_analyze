@@ -3194,6 +3194,8 @@ sub add_free_word
 {
 	my $add_word = $_[0];
 
+	$add_word =~ s/]/］/g;   #/* うまくエスケープできず、苦肉の策 */
+
 	if ($current_path->pu_block eq "")
 	{
 		if ($add_word ne "\n")
