@@ -155,6 +155,9 @@ struct CurrentSentence => {
 	func_call  => '$',       #/* 関数コールのフラグ         */
 	case_cond  => '$',       #/*                            */
 	sentence   => '$',       #/* 文のタイプ(式、宣言、制御) */
+
+	lvalue     => '$',       #/* 左辺値                     */
+	rvalue     => '$',       #/* 右辺値                     */
 };
 
 
@@ -214,10 +217,7 @@ my %analyze_controls = (
                         'while'   => \&analyze_while,   'return'  => \&analyze_return
                     );
 
-my %analyze_in_funcs = (
-                        '('       => \&analyze_round_bracket_open,
-                        ':'       => \&analyze_colon,   ';'       => \&analyze_semicolon, '?'        => \&analyze_ternary,
-                    );
+
 
 &main();
 
@@ -2318,6 +2318,10 @@ sub clear_current_sentence
 	$current_sentence->case_val("");
 	$current_sentence->func_call(0);
 	$current_sentence->case_cond("");
+	$current_sentence->sentence(0);
+
+	$current_sentence->lvalue("");
+	$current_sentence->rvalue("");
 
 	@{$current_sentence->words} = ();
 #	&disp_current_words();
@@ -3214,36 +3218,6 @@ sub add_free_word
 }
 
 
-#/* ( の解析                                     */
-sub analyze_round_bracket_open
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-	my $symbol_name = "";
-
-	if ($loop > 0)
-	{
-		$symbol_name = $local_array[$loop - 1];
-	}
-
-	if ($symbol_name =~ /([_A-Za-z][_A-Za-z0-9]*)/)
-	{
-		#/* 前の語がシンボルだった場合 */
-		if ($symbol_name ne "sizeof")
-		{
-			print "function call! $symbol_name()\n";
-			&add_function_call($symbol_name);
-			$current_sentence->func_call(1);
-			$current_path->call_block(1);
-		}
-	}
-
-	#/* 解析対象外のワード */
-	&add_free_word("(");
-	return $loop;
-}
-
-
 sub analyze_if
 {
 	my $loop        = $_[0];
@@ -3933,33 +3907,6 @@ sub analyze_bracket_close
 }
 
 
-sub analyze_ternary
-{
-	my $loop        = $_[0];
-	my @local_array = @{$current_sentence->words};
-
-	#/* 三項演算子 */
-
-	#/* 末尾がセミコロンではない */
-	if ($local_array[@local_array - 1] ne ";")
-	{
-		#/* 次行に持ち越し */
-		$current_sentence->clear(0);
-		$current_sentence->position($loop);
-		return @local_array - 1;
-	}
-
-	#/* とりあえず、行末まで全部一つの処理として扱う */
-	while ($loop < @local_array - 1)
-	{
-		&add_free_word($local_array[$loop]);
-		$loop++;
-	}
-
-	return $loop - 1;
-}
-
-
 #/* 関数内の文の種類を先頭2語で判別する */
 sub analyze_function_sentence_type
 {
@@ -4103,24 +4050,171 @@ sub analyze_declare_line
 }
 
 
-#/* 関数内の式の解析 */
-sub analyze_formula_sentence
+#/* 式の解析 */
+sub analyze_formula_text
 {
-	my $loop = 0;
-	my @local_array = @{$current_sentence->words};
+	my ($is_control, @texts) = @_;
+#	my @texts = @_;
+	my $loop  = 0;
+	my $value = 0;
+	my $type  = 0;
+	my $func  = 0;
+	my $nest  = 0;
 
-	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
+	for ($loop = 0; $loop < @texts; $loop++)
 	{
-		if (exists $analyze_in_funcs{$local_array[$loop]}) 
+		if ($texts[$loop] eq "(")
 		{
-#			print "analyze in func2 $loop, @local_array\n";
-			my $func = $analyze_in_funcs{$local_array[$loop]};
-			$loop = &$func($loop);
+			$nest++;
+			if ($func)
+			{
+				print "function call! $value()\n";
+				&add_function_call($value);
+				if ($is_control == 0)
+				{
+					$current_sentence->func_call(1);
+					$current_path->call_block(1);
+				}
+			}
+
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] eq ")")
+		{
+			if ($nest == 0)
+			{
+				return;
+			}
+
+			$nest--;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] eq "?")
+		{
+			$nest++;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] eq ":")
+		{
+			($nest > 0) or die "strange collon $loop, @texts\n";
+			$nest--;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] eq ";")
+		{
+			$loop = &analyze_semicolon($loop);
+		}
+		elsif ($texts[$loop] =~ /^(void|char|int|short|long|float|double|struct|union|enum|typedef|static|extern|inline|const|volatile|unsigned|signed|auto)$/)
+		{
+			#/* 式でこのあたりのワードが入る場合はキャストとかなので、無視 */
+			$type = 1;
+			&add_free_word($texts[$loop]);
+		}
+		elsif (check_typedefs($texts[$loop]))
+		{
+			#/* 既知の型 */
+			$type = 1;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\.|\-\>)$/)
+		{
+			#/* 構造体へのアクセス */
+			($current_sentence->rvalue ne "") or die "strange dot or arrow1\n";
+			($type == 0) or die "strange dot or arrow2\n";
+			$current_sentence->rvalue($current_sentence->rvalue . $1);
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\=|\+\=|\-\=|\*\=|\/\=|\%\=|\&\=|\|\=|\^\=|\<\<\=|\>\>\=)$/)
+		{
+			#/* 代入演算子 */
+			$func = 0;
+			($current_sentence->rvalue ne "") or die "strange Substitution formula1\n";
+			($type == 0) or die "strange Substitution formula2\n";
+			if ($current_sentence->lvalue ne "")
+			{
+				printf "%s $1 %s\n", $current_sentence->lvalue, $current_sentence->rvalue;
+			}
+
+			if (check_global_variable($value)) 
+			{
+				#/**/
+				printf "add write variable $value in %s\n", $current_function->name;
+				add_array_no_duplicate($current_function->var_write ,$value);
+			}
+
+			$current_sentence->lvalue($current_sentence->rvalue);
+			$current_sentence->rvalue("");
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\&|\*)$/)
+		{
+			#/* この二つは単項の場合と二項の場合があるので要注意 */
+			$func = 0;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\+\+|\-\-|\!|\~|sizeof)$/)
+		{
+			#/* 単項演算子（位置に注意） */
+			($type == 0) or die "strange Unary operator $loop, @texts\n";
+			$func = 0;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\+|\-|\/|\%|\<\<|\>\>|\&\&|\|\||\&|\||\=\=|\!\=|\^|\>\=|\>|\<\=|\<)$/)
+		{
+			#/* 通常の演算子 */
+			($type == 0) or die "strange operator $loop, @texts\n";
+			$func = 0;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\,)$/)
+		{
+			#/* カンマ */
+			($type == 0) or die "strange array operator\n";
+			$func = 0;
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\[|\])$/)
+		{
+			#/* 添え字 */
+			($type == 0) or die "strange array operator\n";
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /^(\;)$/)
+		{
+			#/* セミコロン */
+			&add_free_word($texts[$loop]);
+		}
+		elsif ($texts[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+		{
+			#/* とりあえずシンボルが来たら、rvalueとして保持 */
+			$type = 0;
+			$value = $1;
+			$func = 1;
+
+			if ($nest > 0)
+			{
+				if ( ($texts[$loop - 1] eq "(") &&
+				     ($texts[$loop + 1] eq ")") )
+				{
+					#/* (symbol)の場合、既存の型ならキャスト、そうでなければシンボルの参照だが、基本的にキャストとみなす */
+					$func = 0;
+				}
+			}
+
+			if (check_global_variable($value)) 
+			{
+				#/**/
+				printf "add read variable $value in %s\n", $current_function->name;
+				add_array_no_duplicate($current_function->var_read ,$value);
+			}
+
+			$current_sentence->rvalue($current_sentence->rvalue . $1);
+			&add_free_word($texts[$loop]);
 		}
 		else
 		{
-			#/* 解析対象外のワード */
-			&add_free_word($local_array[$loop]);
+			#/* ここに来るのは直値だけのはず */
+			&add_free_word($texts[$loop]);
 		}
 	}
 
@@ -4128,6 +4222,7 @@ sub analyze_formula_sentence
 }
 
 
+#/* 式の行解析（キャストなどで改行が入った場合を考慮） */
 sub analyze_formula_line
 {
 	my $loop;
@@ -4149,7 +4244,7 @@ sub analyze_formula_line
 		{
 			if ($nest == 0)
 			{
-				&analyze_formula_sentence();
+				&analyze_formula_text(0, @local_array);
 				$current_sentence->clear(1);
 			}
 		}
@@ -4293,7 +4388,6 @@ sub output_result
 		printf OUT_PU_OUT "!pragma useVerticalIf on\n";
 		printf OUT_PU_OUT "skinparam ConditionEndStyle hline\n";
 
-#		printf OUT_PU_OUT "floating note:$name()\n";
 		printf OUT_PU_OUT "title <size:32>$name()</size>\n";
 #		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $function->name,$function->ret_typ,$function->lines,$function->comment;
 		
@@ -4327,6 +4421,18 @@ sub output_result
 		{
 			my $function = $function->func_ref($loop);
 			printf OUT_FILE_OUT "\t[%s]\t%s\n", $loop, $function;
+		}
+		printf OUT_FILE_OUT "\tVariables write to\n";
+		for ($loop = 0; $loop < @{$function->var_write}; $loop++)
+		{
+			my $variable = $function->var_write($loop);
+			printf OUT_FILE_OUT "\t[%s]\t%s\n", $loop, $variable;
+		}
+		printf OUT_FILE_OUT "\tVariables read from\n";
+		for ($loop = 0; $loop < @{$function->var_read}; $loop++)
+		{
+			my $variable = $function->var_read($loop);
+			printf OUT_FILE_OUT "\t[%s]\t%s\n", $loop, $variable;
 		}
 		printf OUT_FILE_OUT "\n";
 
@@ -4642,6 +4748,25 @@ sub check_typedefs
 }
 
 
+#/* グローバル変数に含まれるかどうかをチェックする */
+sub check_global_variable
+{
+	my $variable;
+	my $name = $_[0];
+
+	foreach $variable (@global_variables)
+	{
+#		printf "check %s == %s ?\n", $name, $variable->name;
+		if ($variable->name eq $name)
+		{
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+
 #/* モジュール内の参照関係を確認 */
 sub check_reference
 {
@@ -4715,7 +4840,7 @@ sub output_path
 
 	foreach $text (@{$path->texts})
 	{
-		printf OUT_FILE_OUT "\t$text";
+		print OUT_FILE_OUT "\t$text";
 	}
 
 	foreach $text (@{$path->pu_text})
