@@ -3670,6 +3670,7 @@ sub analyze_default
 	$loop++;
 
 	$current_path->case_count($current_path->case_count + 1);
+#	printf "inc case count %d\n", $current_path->case_count;
 	if ($current_path->case_count == 1)
 	{
 		#/* いきなりdefault文が来た場合 */
@@ -4124,7 +4125,7 @@ sub analyze_formula_text
 			$nest++;
 			if ($func)
 			{
-				print "function call! $value()\n";
+#				print "function call! $value()\n";
 				&add_function_call($value);
 				if ($is_control == 0)
 				{
@@ -4723,6 +4724,7 @@ sub re_enter_latest_child
 sub return_parent_path
 {
 	my $path_type = $current_path->type;
+	my $case_count = $current_path->case_count;
 	my $backward_text = $current_path->backward;
 	&pop_path();
 	if ($path_type eq "if")
@@ -4757,10 +4759,20 @@ sub return_parent_path
 	}
 	elsif ($path_type eq "switch")
 	{
-		#/* ここに来るのはcaseもdefaultもないswitch文！ */
-		print "switch sentence with no case or default!!!!\n";
-		&push_pu_text("#HotPink:No case or default label!]\n");
-		&push_pu_text("}\n");
+		if ($case_count > 0)
+		{
+			#/* ここに来るのは最後のcase/default文に{}がついていた場合！ */
+			print "switch sentence close!!!!\n";
+			&push_pu_text("endif\n");
+			&push_pu_text("}\n");
+		}
+		else
+		{
+			#/* ここに来るのはcaseもdefaultもないswitch文！ */
+			printf "switch sentence with no case or default!!!! case count:%d\n", $current_path->case_count;
+			&push_pu_text("#HotPink:No case or default label!]\n");
+			&push_pu_text("}\n");
+		}
 	}
 	elsif ( ($path_type eq "case") ||
 	        ($path_type eq "default") )
@@ -4884,7 +4896,7 @@ sub check_reference
 		if ($func_refs ne "")
 		{
 			#/* 参照している関数側の被参照関数に追加する */
-			printf "func call!!!!!!! [%s]\n", $func_refs->name;
+#			printf "func call!!!!!!! [%s]\n", $func_refs->name;
 			push @{$func_refs->func_ref}, $function->name;
 		}
 	}
@@ -4987,7 +4999,7 @@ sub read_setting_file
 			print "define $macro_name($2) : $3\n";
 			&new_macro("$macro_name", $3, $2);
 		}
-		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\s]+)/)
+		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\n]+)/)
 		{
 			print "define $1 as $2\n";
 			&new_macro($1, $2, "");
