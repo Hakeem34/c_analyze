@@ -256,6 +256,34 @@ sub init_variables
 }
 
 
+sub find_c_files
+{
+	my $target_dir = $_[0];
+	my $dh;
+
+	opendir($dh, $target_dir) || die "Can't opendir $target_dir: $!";
+	while (readdir($dh))
+	{
+#		print "$_\n";
+		my $entry = $_;
+
+		if ($entry =~/\.[cC]$/)         #/* ".c"で終わっている */
+		{
+			print "$entry\n";
+			if ($entry =~/[\/\\]$/)         #/* ".c"で終わっている */
+			{
+				push @target_files, $target_dir . $entry;
+			}
+			else
+			{
+				push @target_files, $target_dir . "\\" . $entry;
+			}
+		}
+	}
+	closedir($dh)
+}
+
+
 #/* コマンドラインオプションの解析 */
 sub check_command_line_option
 {
@@ -280,7 +308,14 @@ sub check_command_line_option
 		}
 		else
 		{
-			push @target_files, $arg;
+			if (-d $arg)
+			{
+				find_c_files($arg);
+			}
+			else
+			{
+				push @target_files, $arg;
+			}
 		}
 	}
 }
@@ -3235,6 +3270,8 @@ sub analyze_if
 	}
 	else
 	{
+#		print "analyze_formula_text(1) $loop, @local_array\n";
+		analyze_formula_text(1, @local_array[($loop + 2)..(@local_array)]);
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
@@ -3412,6 +3449,7 @@ sub analyze_switch
 	}
 	else
 	{
+		analyze_formula_text(1, @local_array[($loop + 2)..(@local_array)]);
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
@@ -3503,6 +3541,17 @@ sub analyze_while
 #	print "analyze while!F $loop, @local_array\n";
 	($loop+1 < @local_array) or die "strange while sentence!\n";
 
+	if ($current_path->type eq "do")
+	{
+		if ($local_array[@local_array - 1] ne ";")
+		{
+			#/* セミコロンが次行の場合は、持ち越す */
+			$current_sentence->clear(0);
+			$current_sentence->position($_[0]);
+			return $loop;
+		}
+	}
+
 	if ($local_array[$loop+1] ne "(")
 	{
 		#/* whileの後に()が来ない。マクロ使っているやつ */
@@ -3511,6 +3560,8 @@ sub analyze_while
 	}
 	else
 	{
+#		print "analyze_formula_text(1) $loop, @local_array\n";
+		analyze_formula_text(1, @local_array[($loop + 2)..(@local_array)]);
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
@@ -4063,6 +4114,11 @@ sub analyze_formula_text
 
 	for ($loop = 0; $loop < @texts; $loop++)
 	{
+#		if (1 == $is_control)
+#		{
+#			print "$loop, $texts[$loop]\n";
+#		}
+
 		if ($texts[$loop] eq "(")
 		{
 			$nest++;
@@ -4077,7 +4133,10 @@ sub analyze_formula_text
 				}
 			}
 
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] eq ")")
 		{
@@ -4087,18 +4146,27 @@ sub analyze_formula_text
 			}
 
 			$nest--;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] eq "?")
 		{
 			$nest++;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] eq ":")
 		{
 			($nest > 0) or die "strange collon $loop, @texts\n";
 			$nest--;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] eq ";")
 		{
@@ -4108,13 +4176,19 @@ sub analyze_formula_text
 		{
 			#/* 式でこのあたりのワードが入る場合はキャストとかなので、無視 */
 			$type = 1;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif (check_typedefs($texts[$loop]))
 		{
 			#/* 既知の型 */
 			$type = 1;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\.|\-\>)$/)
 		{
@@ -4122,7 +4196,10 @@ sub analyze_formula_text
 			($current_sentence->rvalue ne "") or die "strange dot or arrow1\n";
 			($type == 0) or die "strange dot or arrow2\n";
 			$current_sentence->rvalue($current_sentence->rvalue . $1);
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\=|\+\=|\-\=|\*\=|\/\=|\%\=|\&\=|\|\=|\^\=|\<\<\=|\>\>\=)$/)
 		{
@@ -4144,45 +4221,66 @@ sub analyze_formula_text
 
 			$current_sentence->lvalue($current_sentence->rvalue);
 			$current_sentence->rvalue("");
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\&|\*)$/)
 		{
 			#/* この二つは単項の場合と二項の場合があるので要注意 */
 			$func = 0;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\+\+|\-\-|\!|\~|sizeof)$/)
 		{
 			#/* 単項演算子（位置に注意） */
 			($type == 0) or die "strange Unary operator $loop, @texts\n";
 			$func = 0;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\+|\-|\/|\%|\<\<|\>\>|\&\&|\|\||\&|\||\=\=|\!\=|\^|\>\=|\>|\<\=|\<)$/)
 		{
 			#/* 通常の演算子 */
 			($type == 0) or die "strange operator $loop, @texts\n";
 			$func = 0;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\,)$/)
 		{
 			#/* カンマ */
 			($type == 0) or die "strange array operator\n";
 			$func = 0;
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\[|\])$/)
 		{
 			#/* 添え字 */
 			($type == 0) or die "strange array operator\n";
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(\;)$/)
 		{
 			#/* セミコロン */
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		elsif ($texts[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
@@ -4209,12 +4307,18 @@ sub analyze_formula_text
 			}
 
 			$current_sentence->rvalue($current_sentence->rvalue . $1);
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 		else
 		{
 			#/* ここに来るのは直値だけのはず */
-			&add_free_word($texts[$loop]);
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
 		}
 	}
 
@@ -4244,7 +4348,7 @@ sub analyze_formula_line
 		{
 			if ($nest == 0)
 			{
-				&analyze_formula_text(0, @local_array);
+				analyze_formula_text(0, @local_array);
 				$current_sentence->clear(1);
 			}
 		}
