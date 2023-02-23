@@ -984,6 +984,8 @@ sub replace_macro
 				#/* 展開対象に指定されていなければ、スキップする */
 				next;
 			}
+			
+#			print "check for $define\n";
 		}
 
 		if ($macros[$index]->is_func == 1)
@@ -1040,7 +1042,16 @@ sub replace_macro
 		}
 		else
 		{
+			my $prev_text = $text;
 			$text =~ s/$define/$value/g;
+			if( $prev_text ne $text )
+			{
+#				print "replace!!! $define\n"
+			}
+			else
+			{
+#				print "no replace!!! $define\n"
+			}
 		}
 	}
 #	print "[$text]\n";
@@ -4112,6 +4123,9 @@ sub analyze_formula_text
 	my $type  = 0;
 	my $func  = 0;
 	my $nest  = 0;
+	my $sizeof = 0;
+
+#	print "analyze_formula_text [$is_control] @texts\n";
 
 	for ($loop = 0; $loop < @texts; $loop++)
 	{
@@ -4185,7 +4199,15 @@ sub analyze_formula_text
 		elsif (check_typedefs($texts[$loop]))
 		{
 			#/* 既知の型 */
-			$type = 1;
+			if ($sizeof == 1)
+			{
+				$sizeof = 0;
+			}
+			else
+			{
+				$type = 1;
+			}
+
 			if (0 == $is_control)
 			{
 				add_free_word($texts[$loop]);
@@ -4241,6 +4263,11 @@ sub analyze_formula_text
 			#/* 単項演算子（位置に注意） */
 			($type == 0) or die "strange Unary operator $loop, @texts\n";
 			$func = 0;
+			if ($texts[$loop] eq "sizeof")
+			{
+				$sizeof = 1;
+			}
+			
 			if (0 == $is_control)
 			{
 				add_free_word($texts[$loop]);
@@ -4259,7 +4286,7 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /^(\,)$/)
 		{
 			#/* カンマ */
-			($type == 0) or die "strange array operator\n";
+			($type == 0) or die "strange array operator1 loop = $loop\n";
 			$func = 0;
 			if (0 == $is_control)
 			{
@@ -4269,7 +4296,7 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /^(\[|\])$/)
 		{
 			#/* 添え字 */
-			($type == 0) or die "strange array operator\n";
+			($type == 0) or die "strange array operator2\n";
 			if (0 == $is_control)
 			{
 				add_free_word($texts[$loop]);
@@ -4286,6 +4313,11 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
 			#/* とりあえずシンボルが来たら、rvalueとして保持 */
+			if ($sizeof == 1)
+			{
+				$sizeof = 0;
+			}
+			
 			$type = 0;
 			$value = $1;
 			$func = 1;
@@ -4316,6 +4348,11 @@ sub analyze_formula_text
 		else
 		{
 			#/* ここに来るのは直値だけのはず */
+			if ($sizeof == 1)
+			{
+				$sizeof = 0;
+			}
+
 			if (0 == $is_control)
 			{
 				add_free_word($texts[$loop]);
@@ -4349,6 +4386,7 @@ sub analyze_formula_line
 		{
 			if ($nest == 0)
 			{
+#				print "@local_array \n";
 				analyze_formula_text(0, @local_array);
 				$current_sentence->clear(1);
 			}
