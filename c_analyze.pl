@@ -3416,6 +3416,8 @@ sub analyze_return
 	my @local_array = @{$current_sentence->words};
 
 	#/* return文 */
+#	print "analyze_return : $loop, @local_array\n";
+	analyze_formula_text(1, @local_array[($loop + 1)..(@local_array - 1)]);
 	my $ret_val = "";
 	$loop++;
 	while ($local_array[$loop] ne ";")
@@ -4117,13 +4119,13 @@ sub analyze_declare_line
 sub analyze_formula_text
 {
 	my ($is_control, @texts) = @_;
-#	my @texts = @_;
 	my $loop  = 0;
 	my $value = 0;
 	my $type  = 0;
 	my $func  = 0;
 	my $nest  = 0;
 	my $sizeof = 0;
+	my @structs = ();
 
 #	print "analyze_formula_text [$is_control] @texts\n";
 
@@ -4185,7 +4187,10 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] eq ";")
 		{
-			$loop = &analyze_semicolon($loop);
+			if (0 == $is_control)
+			{
+				$loop = &analyze_semicolon($loop);
+			}
 		}
 		elsif ($texts[$loop] =~ /^(void|char|int|short|long|float|double|struct|union|enum|typedef|static|extern|inline|const|volatile|unsigned|signed|auto)$/)
 		{
@@ -4223,6 +4228,9 @@ sub analyze_formula_text
 			{
 				add_free_word($texts[$loop]);
 			}
+
+			push @structs, $value;
+			push @structs, $texts[$loop];
 		}
 		elsif ($texts[$loop] =~ /^(\=|\+\=|\-\=|\*\=|\/\=|\%\=|\&\=|\|\=|\^\=|\<\<\=|\>\>\=)$/)
 		{
@@ -4235,10 +4243,24 @@ sub analyze_formula_text
 				printf "%s $1 %s\n", $current_sentence->lvalue, $current_sentence->rvalue;
 			}
 
-			if (check_global_variable($value)) 
+			if (@structs > 0)
+			{
+				#/* 構造体メンバーの参照 */
+				if (check_global_variable($structs[0])) 
+				{
+					my $tmp = "";
+					my $ref = "";
+					foreach my $tmp (@structs) {$ref = $ref . $tmp;}
+					$ref = $ref . $value;
+					printf "in %s : add write struct $ref\n", $current_function->name;
+					add_array_no_duplicate($current_function->var_write ,$structs[0]);   #/* 書き込みはメンバー付きの状態でしか登録されないので、構造体名も一緒に登録する */
+					add_array_no_duplicate($current_function->var_write ,$ref);
+				}
+			}
+			elsif (check_global_variable($value)) 
 			{
 				#/**/
-				printf "add write variable $value in %s\n", $current_function->name;
+				printf "in %s : add write variable $value\n", $current_function->name;
 				add_array_no_duplicate($current_function->var_write ,$value);
 			}
 
@@ -4248,6 +4270,9 @@ sub analyze_formula_text
 			{
 				add_free_word($texts[$loop]);
 			}
+
+			#/* 構造体の情報をリセット */
+			@structs = ();
 		}
 		elsif ($texts[$loop] =~ /^(\&|\*)$/)
 		{
@@ -4282,6 +4307,9 @@ sub analyze_formula_text
 			{
 				add_free_word($texts[$loop]);
 			}
+
+			#/* 構造体の情報をリセット */
+			@structs = ();
 		}
 		elsif ($texts[$loop] =~ /^(\,)$/)
 		{
@@ -4332,10 +4360,24 @@ sub analyze_formula_text
 				}
 			}
 
-			if (check_global_variable($value)) 
+			if (@structs > 0)
 			{
-				#/**/
-				printf "add read variable $value in %s\n", $current_function->name;
+				#/* 構造体メンバーの参照 */
+				print "read from struct! $structs[0]\n";
+				if (check_global_variable($structs[0])) 
+				{
+					my $tmp = "";
+					my $ref = "";
+					foreach my $tmp (@structs) {$ref = $ref . $tmp;}
+					$ref = $ref . $value;
+					printf "in %s : add read struct $ref\n", $current_function->name;
+					add_array_no_duplicate($current_function->var_read ,$ref);
+				}
+			}
+			elsif (check_global_variable($value)) 
+			{
+				#/* 変数の参照 */
+				printf "in %s : add read variable $value\n", $current_function->name;
 				add_array_no_duplicate($current_function->var_read ,$value);
 			}
 
@@ -4378,6 +4420,7 @@ sub analyze_formula_line
 		return;
 	}
 
+#	print "analyze_formula_line @local_array\n";
 	$current_sentence->clear(0);
 	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
