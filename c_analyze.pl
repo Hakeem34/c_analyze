@@ -38,10 +38,12 @@ use constant SENTENCE_UNKNOWN => 3;
 
 #/* スクリプト動作の設定 */
 my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力する */
+my $log_file_name = "";         #/* ログファイル名 */
 my $jar_path = "";				#/* JAVAを起動してPUファイルを生成する */
 
 struct GlobalInfo => {
 	lines        => '$',       #/* 行数                       */
+	steps        => '$',       #/* 実効ステップ数             */
 	comment      => '$',       #/* コメント行数               */
 	indent       => '$',       #/* 現在のインデント           */
 	section      => '$',       #/* 現在のセクション           */
@@ -56,6 +58,7 @@ struct Macros => {
 	value        => '$',       #/* 定義内容                   */
 	is_func      => '$',       #/* 関数かどうか               */
 	args         => '@',       #/* 引数                       */
+	is_extra     => '$',       #/* ファイル外での定義か？     */
 };
 
 
@@ -66,6 +69,7 @@ struct Functions => {
 	texts      => '@',       #/* 原文                       */
 	steps      => '$',       #/* 実効ステップ数             */
 	path	   => '$',       #/* メインパス                 */
+	paths	   => '$',       #/* 分岐パス数                 */
 	static     => '$',       #/* スタティックか？           */
 	ret_typ    => '$',       #/* 戻り値                     */
 	args_typ   => '@',       #/* 引数型                     */
@@ -236,6 +240,7 @@ sub init_variables
 	$current_path = "";
 	$global_data = GlobalInfo->new();
 	$global_data->lines(0);
+	$global_data->steps(0);
 	$global_data->comment(0);
 	$global_data->indent(0);
 	$global_data->section("default");
@@ -291,16 +296,34 @@ sub check_command_line_option
 
 	foreach my $arg (@ARGV)
 	{
-		print "$arg\n";
+#		print "$arg\n";
 
 		if ($option eq "s")
 		{
 			$setting_file = $arg;
 			$option = "";
 		}
+		elsif ($option eq "o")
+		{
+			$output_fld = $arg;
+			$option = "";
+		}
+		elsif ($option eq "l")
+		{
+			$log_file_name = $arg;
+			$option = "";
+		}
 		elsif ($arg eq "-s")
 		{
 			$option = "s";
+		}
+		elsif ($arg eq "-l")
+		{
+			$option = "l";
+		}
+		elsif ($arg eq "-o")
+		{
+			$option = "o";
 		}
 		elsif ($arg eq "-t")
 		{
@@ -364,6 +387,14 @@ sub main
 	}
 
 	&check_command_line_option();
+	make_directory($output_fld);
+
+	if ($log_file_name ne "")
+	{
+		my $log_path = $output_fld . "/" . $log_file_name;
+		open STDOUT, ">>$log_path" or die "Can't create log file!\n";
+	}
+
 	foreach my $source_file (@target_files)
 	{
 		print "--------------------------------------------------------------------------------\n";
@@ -474,7 +505,6 @@ sub analyze_source
 	my $source_file  = $_[0];
 	my $local_line;
 
-	make_directory($output_fld);
 	&read_setting_file();
 	@output_lines = ();
 
@@ -495,7 +525,6 @@ sub analyze_source
 	$current_brief    = "";
 	foreach $local_line (@input_lines)
 	{
-		$global_data->lines($global_data->lines+1);
 		&analyze_module($local_line);
 	}
 
@@ -1112,9 +1141,10 @@ sub analyze_macro_arg_list
 #/* マクロ定義の追加処理 */
 sub new_macro
 {
-	my $name  = $_[0];
-	my $value = $_[1];
-	my $args =  $_[2];
+	my $is_ex = $_[0];
+	my $name  = $_[1];
+	my $value = $_[2];
+	my $args  = $_[3];
 	my $defined;
 	my $local_macro;
 	my $index;
@@ -1130,6 +1160,7 @@ sub new_macro
 	$local_macro = Macros->new();
 	$local_macro->name($name);
 	$local_macro->value($value);
+	$local_macro->is_extra($is_ex);
 	if ($args eq "")
 	{
 		$local_macro->is_func(0);
@@ -1206,7 +1237,7 @@ sub line_define_parse
 				my $second_part = $3;
 
 #				print "#define macro func! $macro_name($2) : $3\n";
-				&new_macro("$macro_name", $3, $2);
+				&new_macro(0, "$macro_name", $3, $2);
 				&output_line($local_line);
 			}
 			elsif ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)\n/)
@@ -1218,7 +1249,7 @@ sub line_define_parse
 					my $second_part = $2;
 					
 #					print "#define macro! $macro_name : $second_part\n";
-					&new_macro($macro_name, $second_part, "");
+					&new_macro(0, $macro_name, $second_part, "");
 					&output_line($local_line);
 				}
 			}
@@ -1228,7 +1259,7 @@ sub line_define_parse
 				if ($valid_now == 1)
 				{
 #					print "#define macro only! $1\n";
-					&new_macro($1, "", "");
+					&new_macro(0, $1, "", "");
 
 					&output_line($local_line);
 				}
@@ -1965,11 +1996,24 @@ sub pop_valid_nest
 }
 
 
+#/* ステップ数カウント */
+sub count_steps
+{
+	$global_data->steps($global_data->steps+1);
+	if ($global_data->in_function == 1)
+	{
+		#/* 関数内の行数をカウント */
+		$current_function->steps($current_function->steps + 1);
+		$current_path->steps($current_path->steps + 1);
+	}
+}
+
 #/* Cモジュール解析処理 */
 sub analyze_module
 {
 	my $local_line = $_[0];
 
+	$global_data->lines($global_data->lines+1);
 	if ($global_data->in_function == 1)
 	{
 		#/* 関数内の行数をカウント */
@@ -2032,6 +2076,9 @@ sub analyze_module
 
 		print "include $path\n";
 		push @include_files, $path;
+		
+		#/* #include は実効ステップとしてカウント */
+		&count_steps();
 		return;
 	}
 
@@ -2045,6 +2092,8 @@ sub analyze_module
 		}
 
 		print "include $path\n";
+		#/* #include は実効ステップとしてカウント */
+		&count_steps();
 		push @include_files, $path;
 		return;
 	}
@@ -2053,7 +2102,21 @@ sub analyze_module
 	if ($local_line =~ /^\#/)
 	{
 #		print "ignore directive \#$'\n";
+		if ($local_line =~ /^\#define __C_ANALYZE_LITERALS_/)
+		{
+			#/* リテラル定義はツールが勝手に足している行なので実効ステップのカウントから除外 */
+		}
+		else
+		{
+			#/* マクロ定義などは実効ステップとしてカウント */
+			&count_steps();
+		}
 		return;
+	}
+	else
+	{
+		#/* 空行、コメント行、ディレクティブ以外は実効ステップとしてカウント */
+		&count_steps();
 	}
 
 	#/* 新しい構文が開始した場合は、まず原文を保持 */
@@ -3074,6 +3137,7 @@ sub new_function
 
 	&new_path("", "", 0);
 	$current_function->path($current_path);
+	$current_function->paths(1);
 }
 
 
@@ -4498,6 +4562,17 @@ sub create_new_path
 	my $child_num;
 	my $path_type = $_[0];
 
+	if ($path_type ne "switch")
+	{
+		#/* switch文は便宜上パス分岐しているが、pathsのカウントには含めない */
+
+		if (@{$current_path->texts})
+		{
+			#/* case、defaultなどの空のパスはカウントしない */
+			$current_function->paths($current_function->paths+1);
+		}
+	}
+
 	if ($current_sentence->case_val ne "")
 	{
 		($current_path->type eq "switch") or die "not switch!\n";
@@ -4508,7 +4583,7 @@ sub create_new_path
 	$child_num = @{$current_path->child};
 	&push_pu_text("Link to child[$child_num]\n");
 	&new_path($path_type, $current_path, $global_data->indent);
-	
+
 	if ($current_sentence->case_cond ne "")
 	{
 		my $push_text = $current_sentence->case_cond;
@@ -4525,17 +4600,42 @@ sub output_result
 	my $include;
 	my $function;
 	my $variable;
+	my $macro;
 	my $arg_type;
 	my $arg_name;
 	my $loop;
 	my @pu_files = ();
 
 	printf OUT_FILE_OUT "Total Lines\t%s\n", $global_data->lines;
+	printf OUT_FILE_OUT "Total Steps\t%s\n", $global_data->steps;
 	printf OUT_FILE_OUT "Total Comment\t%s\n", $global_data->comment;
 	printf OUT_FILE_OUT "Include Files\n";
 	foreach $include (@include_files)
 	{
 		print OUT_FILE_OUT "\t$include\n";
+	}
+
+	printf OUT_FILE_OUT "\nmacro defs\n";
+	printf OUT_FILE_OUT "\tname\tis_func\targs\tvalue\n";
+	foreach $macro (@macros)
+	{
+		if ($macro->is_extra == 0)
+		{
+			my $arg;
+			my $args = "";
+			my $value = "";
+			
+#			printf "print macro! %s\n", $macro->name;
+			#/* マクロ引数を連結する */
+			foreach $arg (@{$macro->args})
+			{
+#				printf "print macro arg! %s\n", $arg;
+				$args = $args . $arg . " ";
+			}
+
+			$value = &restore_literal($macro->value);
+			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $macro->name,$macro->is_func,$args,$value;
+		}
 	}
 
 	printf OUT_FILE_OUT "\ntype defs\n";
@@ -4554,10 +4654,10 @@ sub output_result
 	}
 
 	printf OUT_FILE_OUT "\nFunction List\n";
-	printf OUT_FILE_OUT "\tname\tret_type\tlines\tsummary\tcomment\tstatic\n";
+	printf OUT_FILE_OUT "\tname\tret_type\tlines\tsummary\tcomment\tstatic\tsteps\tpaths\n";
 	foreach $function (@functions)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $function->name,$function->ret_typ,$function->lines,$function->summary,$function->comment,$function->static;
+		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $function->name,$function->ret_typ,$function->lines,$function->summary,$function->comment,$function->static,$function->steps,$function->paths;
 	}
 
 	printf OUT_FILE_OUT "\nFunction Detail\n";
@@ -4578,6 +4678,9 @@ sub output_result
 #		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $function->name,$function->ret_typ,$function->lines,$function->comment;
 		
 		printf OUT_FILE_OUT "\tName  \t%s\n", $function->name;
+		printf OUT_FILE_OUT "\tLines \t%s\n", $function->lines;
+		printf OUT_FILE_OUT "\tSteps \t%s\n", $function->steps;
+		printf OUT_FILE_OUT "\tPaths \t%s\n", $function->paths;
 		printf OUT_FILE_OUT "\tReturn\t%s\n", $function->ret_typ;
 
 		for ($loop = 0; $loop < @{$function->args_typ}; $loop++)
@@ -4632,8 +4735,11 @@ sub output_result
 	
 	if ($jar_path ne "")
 	{
-		print "do pu convert!!! @pu_files\n";
-		system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+		if (0 < @pu_files)
+		{
+			print "do pu convert!!! @pu_files\n";
+			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+		}
 	}
 
 	#/* 関数コールツリーの作成 */
@@ -5037,7 +5143,8 @@ sub output_path
 
 	foreach $text (@{$path->texts})
 	{
-		print OUT_FILE_OUT "\t$text";
+		my $tmp_text = &restore_literal($text);
+		print OUT_FILE_OUT "\t$tmp_text";
 	}
 
 	foreach $text (@{$path->pu_text})
@@ -5051,7 +5158,7 @@ sub output_path
 		}
 		else
 		{
-			$text = restore_literal($text);
+			$text = &restore_literal($text);
 			print OUT_PU_OUT $text;
 		}
 	}
@@ -5078,17 +5185,17 @@ sub read_setting_file
 			my $second_part = $3;
 
 			print "define $macro_name($2) : $3\n";
-			&new_macro("$macro_name", $3, $2);
+			&new_macro(1, "$macro_name", $3, $2);
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\n]+)/)
 		{
 			print "define $1 as $2\n";
-			&new_macro($1, $2, "");
+			&new_macro(1, $1, $2, "");
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]*/)
 		{
 			print "define $1\n";
-			&new_macro($1, "", "");
+			&new_macro(1, $1, "", "");
 		}
 		elsif ($line_text =~ /^incpath[ \t]+([^\s]+)/)
 		{

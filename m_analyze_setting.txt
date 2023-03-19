@@ -1,0 +1,34 @@
+#############################################################################
+# Module analyze setting file
+#############################################################################
+	
+###################################################
+# plantumlのjarファイルパスを指定してください。
+# 省略した場合は、puファイルの変換を行いません
+
+plantuml C:\Users\tkubo\.vscode\extensions\jebbs.plantuml-2.16.0\plantuml.jar
+
+
+
+###################################################
+# モジュール名
+# ここで定義することが可能です。￥は使用不可です。
+
+module_name sample
+
+
+###################################################
+# 解析対象のソースコードを列挙する
+
+source sample\sample.c 
+source sample\sample2.c 
+source sample\sample3.c 
+source sample\sample4.c 
+source sample\sample5.c 
+source sample\sample6.c 
+source sample\sample7.c 
+source sample\sample8.c 
+source sample\sample9.c 
+source sample\sample10.c
+
+
