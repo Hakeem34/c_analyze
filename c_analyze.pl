@@ -59,6 +59,18 @@ struct Macros => {
 	is_func      => '$',       #/* 関数かどうか               */
 	args         => '@',       #/* 引数                       */
 	is_extra     => '$',       #/* ファイル外での定義か？     */
+	summary      => '$',       #/* 概要コメント               */
+};
+
+
+#/* 型定義 */
+struct TypeDefs => {
+	name         => '$',       #/* マクロ名                   */
+	members      => '@',       #/* メンバー                   */
+	members_s    => '@',       #/* メンバーの概要             */
+	values       => '@',       #/* enumの値                   */
+	type         => '$',       #/* none/enum/struct/union     */
+	summary      => '$',       #/* 概要コメント               */
 };
 
 
@@ -125,7 +137,7 @@ struct Variables => {
 	func_write  => '@',       #/* ライトする関数             */
 	section     => '$',       #/* section指定                */
 	forcus      => '$',       #/* 詳細解析対象か？           */
-	comment_txt => '$',       #/* コメント                   */
+	summary     => '$',       #/* 概要コメント               */
 };
 
 
@@ -193,6 +205,7 @@ my @valid_line = (1);
 my @once_valid = (1);
 my $nest_level   = 0;
 my @macros = ();
+my @macros_org = ();
 
 #/* C言語の解析に使う変数 */
 my @include_files  = ();
@@ -808,9 +821,44 @@ sub is_comment_line
 {
 	my $local_line = $_[0];
 
-	if ($local_line =~ /^\/\*.*\*\/\n/)
+#	if ($local_line =~ /^\/\*.*\*\/\n/)
+	if ($local_line =~ /^\/\*(.*)\*\/\n/)
 	{
 #		print "comment!!! $local_line\n";
+#		print "comment line $1\n";
+		my $temp_comment;
+		$current_comments = $current_comment . $1;
+
+		$temp_comment = $1;
+		if ($temp_comment =~ /[^\s\*\-\_\=\@\~\!]/)
+		{
+			#/* スペースと記号だけのコメント行は無視する */
+			if ($current_comment eq "")
+			{
+				$first_comment = $temp_comment;
+			}
+			$current_comment = $temp_comment;
+#			print "current_comment2 : $current_comment\n";
+		}
+
+		if ($current_comment =~ /\@brief[ \t]*([^\n]+)/)
+		{
+#			print "find \@brief1 $1\n";
+			$current_brief = $1;
+		}
+		elsif ($local_line =~ /^\/\* \*\s(.*)\*\/\n/)
+		{
+			#/** この形式もbrief扱いにしてみる */
+#			print "find \@brief2 $1\n";
+			$current_brief = $1;
+		}
+		elsif ($local_line =~ /^\/\* \!\<(.*)\*\/\n/)
+		{
+			#/*!< この形式もbrief扱いにしてみる */
+#			print "find \@brief3 $1\n";
+			$current_brief = $1;
+		}
+
 		return 1;
 	}
 	
@@ -1161,6 +1209,27 @@ sub new_macro
 	$local_macro->name($name);
 	$local_macro->value($value);
 	$local_macro->is_extra($is_ex);
+
+	print "new_macro! $name\n";
+	if ($current_brief ne "")
+	{
+		#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
+		$current_brief =~ s/^\s*//;
+		$local_macro->summary($current_brief);
+		$current_brief = "";
+		$current_comment = "";
+		$first_comment   = "";
+	}
+	else
+	{
+		#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
+		$first_comment =~ s/^\s*//;
+		$current_comment =~ s/^\s*//;
+		$local_macro->summary($first_comment);
+		$current_comment = "";
+		$first_comment   = "";
+	}
+
 	if ($args eq "")
 	{
 		$local_macro->is_func(0);
@@ -1174,6 +1243,9 @@ sub new_macro
 #		printf("macro args : @{$local_macro->args}\n");
 	}
 
+	push @macros_org, $local_macro;   #/* 定義順でマクロを登録 */
+
+	#/* 展開用には文字列が長い順でマクロを登録 */
 	if (@macros == 0)
 	{
 		push @macros, $local_macro;
@@ -1276,6 +1348,16 @@ sub line_define_parse
 						if ($macros[$index]->name eq $1)
 						{
 							splice @macros, $index, 1;
+							&output_line($local_line);
+							return;
+						}
+					}
+
+					for ($index = 0; $index < @macros_org; $index++)
+					{
+						if ($macros_org[$index]->name eq $1)
+						{
+							splice @macros_org, $index, 1;
 							&output_line($local_line);
 							return;
 						}
@@ -2030,30 +2112,8 @@ sub analyze_module
 	}
 
 	#/* コメント行 */
-	if ($local_line =~ /^\/\*(.*)\*\/\n/)
+	if (&is_comment_line($local_line))
 	{
-		my $temp_comment;
-#		print "comment line $1\n";
-		$current_comments = $current_comment . $1;
-
-		$temp_comment = $1;
-		if ($temp_comment =~ /[^\s\*\-\_\=\@\~\!]/)
-		{
-			#/* スペースと記号だけのコメント行は無視する */
-			if ($current_comment eq "")
-			{
-				$first_comment = $temp_comment;
-			}
-			$current_comment = $temp_comment;
-#			print "current_comment2 : $current_comment\n";
-		}
-
-		if ($current_comment =~ /\@brief[ \t]*([^\n]+)/)
-		{
-#			print "find \@brief $1\n";
-			$current_brief = $1;
-		}
-
 		$global_data->comment($global_data->comment+1);
 
 		if ($global_data->in_function == 1)
@@ -3270,7 +3330,7 @@ sub add_variable
 		{
 			#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
 			$current_brief =~ s/^\s*//;
-			$new_variable->comment_txt($current_brief);
+			$new_variable->summary($current_brief);
 			$current_brief = "";
 			$current_comment = "";
 			$first_comment   = "";
@@ -3279,7 +3339,7 @@ sub add_variable
 		{
 			#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
 			$current_comment =~ s/^\s*//;
-			$new_variable->comment_txt($current_comment);
+			$new_variable->summary($current_comment);
 			$current_comment = "";
 			$first_comment   = "";
 		}
@@ -4616,8 +4676,8 @@ sub output_result
 	}
 
 	printf OUT_FILE_OUT "\nmacro defs\n";
-	printf OUT_FILE_OUT "\tname\tis_func\targs\tvalue\n";
-	foreach $macro (@macros)
+	printf OUT_FILE_OUT "\tname\tis_func\targs\tvalue\tsummary\n";
+	foreach $macro (@macros_org)
 	{
 		if ($macro->is_extra == 0)
 		{
@@ -4634,7 +4694,7 @@ sub output_result
 			}
 
 			$value = &restore_literal($macro->value);
-			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\n", $macro->name,$macro->is_func,$args,$value;
+			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\n", $macro->name,$macro->is_func,$args,$value,$macro->summary;
 		}
 	}
 
@@ -4647,14 +4707,14 @@ sub output_result
 
 
 	printf OUT_FILE_OUT "\nVariables List\n";
-	printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\tstatic\textern\n";
+	printf OUT_FILE_OUT "\ttype\tname\tinit\tsummary\tstatic\textern\n";
 	foreach $variable (@global_variables)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt,$variable->static,$variable->extern;
+		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->summary,$variable->static,$variable->extern;
 	}
 
 	printf OUT_FILE_OUT "\nFunction List\n";
-	printf OUT_FILE_OUT "\tname\tret_type\tlines\tsummary\tcomment\tstatic\tsteps\tpaths\n";
+	printf OUT_FILE_OUT "\tname\tret_type\tlines\tsummary\tsummary\tstatic\tsteps\tpaths\n";
 	foreach $function (@functions)
 	{
 		printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $function->name,$function->ret_typ,$function->lines,$function->summary,$function->comment,$function->static,$function->steps,$function->paths;
@@ -4691,12 +4751,12 @@ sub output_result
 		}
 
 		printf OUT_FILE_OUT "\tLocal Variable\n";
-		printf OUT_FILE_OUT "\ttype\tname\tinit\tcomment\tstatic\textern\n";
+		printf OUT_FILE_OUT "\ttype\tname\tinit\tsummary\tstatic\textern\n";
 #		foreach $variable (@{$function->local_val})
 		for ($loop = 0; $loop < @{$function->local_val}; $loop++)
 		{
 			my $variable = ${$function->local_val}[$loop];
-			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->comment_txt,$variable->static,$variable->extern;
+			printf OUT_FILE_OUT "\t%s\t%s\t%s\t%s\t%s\t%s\n", $variable->typ,$variable->name,$variable->init_val,$variable->summary,$variable->static,$variable->extern;
 		}
 
 		printf OUT_FILE_OUT "\tFunctions call to\n";
