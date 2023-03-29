@@ -40,6 +40,7 @@ use constant SENTENCE_UNKNOWN => 3;
 my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力する */
 my $log_file_name = "";         #/* ログファイル名 */
 my $jar_path = "";				#/* JAVAを起動してPUファイルを生成する */
+my $charset_utf = 0;			#/* UTF8指定 */
 
 struct GlobalInfo => {
 	lines        => '$',       #/* 行数                       */
@@ -65,7 +66,8 @@ struct Macros => {
 
 #/* 型定義 */
 struct TypeDefs => {
-	name         => '$',       #/* マクロ名                   */
+	name         => '$',       #/* 型名                       */
+	tag          => '$',       #/* タグ名                     */
 	members      => '@',       #/* メンバー                   */
 	members_s    => '@',       #/* メンバーの概要             */
 	values       => '@',       #/* enumの値                   */
@@ -96,7 +98,7 @@ struct Functions => {
 	make_tree  => '$',       #/* Tree展開済み               */
 	label      => '@',       #/* ラベル                     */
 	local_val  => '@',       #/* ローカル変数               */
-	typedefs   => '%',
+	typedefs   => '@',       #/* ローカル型定義             */
 };
 
 
@@ -174,6 +176,7 @@ struct CurrentSentence => {
 
 	lvalue     => '$',       #/* 左辺値                     */
 	rvalue     => '$',       #/* 右辺値                     */
+	new_typedef=> '$',       #/* 新規の型定義               */
 };
 
 
@@ -206,6 +209,7 @@ my @once_valid = (1);
 my $nest_level   = 0;
 my @macros = ();
 my @macros_org = ();
+my @global_typedefs = ();
 
 #/* C言語の解析に使う変数 */
 my @include_files  = ();
@@ -222,7 +226,6 @@ my $current_comments = "";			#/* 直近のコメント（累積）     */
 my $current_brief    = "";			#/* 直近の@briefコメント       */
 my $in_define = 0;
 my @literals = ();
-my %global_typedefs = ();			#/* グローバルの型定義のハッシュ */
 
 my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse_1st, \&line_parse_2nd, \&line_indent_parse);
 
@@ -245,6 +248,7 @@ sub init_variables
 	$is_literal = 0;
 	$line_postpone = "";
 	@macros = ();
+	@macros_org = ();
 	@include_files  = ();
 	@global_variables = ();
 	@functions = ();
@@ -270,7 +274,7 @@ sub init_variables
 	@once_valid = (1);
 	$nest_level   = 0;
 	$indent_level = 0;
-	%global_typedefs = ();			#/* 型定義のハッシュ */
+	@global_typedefs = ();
 }
 
 
@@ -341,6 +345,10 @@ sub check_command_line_option
 		elsif ($arg eq "-t")
 		{
 			$output_temp_text = 1;
+		}
+		elsif ($arg eq "-utf")
+		{
+			$charset_utf = 1;
 		}
 		else
 		{
@@ -767,7 +775,18 @@ sub comment_parse
 		else
 		{
 #			print "C Style Comment! $local_line\n";
-			if ($' =~/(\*\/)/)
+			if ($' =~/(\*\/)\s*\/\*/)
+			{
+				#/* コメントが続いている場合 */
+				&output_line("/* " . $` . " */\n");
+				$local_line = $line_front . "/* " . $` . " \/ " . $';
+				
+				if ($local_line =~ /[^\s]/)
+				{
+					&comment_parse($local_line);
+				}
+			}
+			elsif ($' =~/(\*\/)/)
 			{
 				&output_line("/* " . $` . " */\n");
 				$local_line = $line_front . $';
@@ -816,6 +835,42 @@ sub is_valid_macro
 }
 
 
+#/*  */
+sub pop_comment
+{
+	my $prioritize_fisrt = $_[0];
+	my $ret_text = "";
+
+	if ($current_brief ne "")
+	{
+		#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
+		$current_brief =~ s/^\s*//;
+		$ret_text = $current_brief;
+		$current_brief = "";
+		$current_comment = "";
+		$first_comment   = "";
+	}
+	else
+	{
+		#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
+		$first_comment =~ s/^\s*//;
+		$current_comment =~ s/^\s*//;
+		if ($prioritize_fisrt == 1)
+		{
+			$ret_text = $first_comment;
+		}
+		else
+		{
+			$ret_text = $current_comment;
+		}
+		$current_comment = "";
+		$first_comment   = "";
+	}
+	
+	return $ret_text;
+}
+
+
 #/* 該当行がコメントかどうか */
 sub is_comment_line
 {
@@ -846,13 +901,13 @@ sub is_comment_line
 #			print "find \@brief1 $1\n";
 			$current_brief = $1;
 		}
-		elsif ($local_line =~ /^\/\* \*\s(.*)\*\/\n/)
+		elsif ($local_line =~ /^\/\* \*\s([^\*].*)\*\/\n/)
 		{
 			#/** この形式もbrief扱いにしてみる */
 #			print "find \@brief2 $1\n";
 			$current_brief = $1;
 		}
-		elsif ($local_line =~ /^\/\* \!\<(.*)\*\/\n/)
+		elsif ($local_line =~ /^\/\* [\!\*]\<(.*)\*\/\n/)
 		{
 			#/*!< この形式もbrief扱いにしてみる */
 #			print "find \@brief3 $1\n";
@@ -1211,24 +1266,9 @@ sub new_macro
 	$local_macro->is_extra($is_ex);
 
 	print "new_macro! $name\n";
-	if ($current_brief ne "")
-	{
-		#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
-		$current_brief =~ s/^\s*//;
-		$local_macro->summary($current_brief);
-		$current_brief = "";
-		$current_comment = "";
-		$first_comment   = "";
-	}
-	else
-	{
-		#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
-		$first_comment =~ s/^\s*//;
-		$current_comment =~ s/^\s*//;
-		$local_macro->summary($first_comment);
-		$current_comment = "";
-		$first_comment   = "";
-	}
+
+	#/* コメントを拾う */
+	$local_macro->summary(&pop_comment(0));
 
 	if ($args eq "")
 	{
@@ -1614,6 +1654,31 @@ sub line_parse_1st
 		{
 			#/* ; か { か } で終わってない行は、スペース1個空けて連結する */
 #			print "joint $local_line\n";
+#			$line_postpone = "$`$1 ";
+		}
+
+		if ($local_line =~ /(else)\s*\n/)
+		{
+			#/* elseで終わっている行は、スペース1個空けて連結する */
+			print "joint $local_line\n";
+			$line_postpone = "$`$1 ";
+		}
+		elsif ($local_line =~ /(\?)\s*\n/)
+		{
+			#/* ?で終わっている行は、スペース1個空けて連結する */
+			print "joint $local_line\n";
+			$line_postpone = "$`$1 ";
+		}
+		elsif ($local_line =~ /(\?[^:]*)\n/)
+		{
+			#/* ?で終わっている行は、スペース1個空けて連結する */
+			print "joint $local_line\n";
+			$line_postpone = "$`$1 ";
+		}
+		elsif ($local_line =~ /(\?.+\:\s*)\n/)
+		{
+			#/* ?で終わっている行は、スペース1個空けて連結する */
+			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
 	}
@@ -2090,11 +2155,9 @@ sub count_steps
 	}
 }
 
-#/* Cモジュール解析処理 */
-sub analyze_module
+#/* 行数カウント */
+sub count_lines
 {
-	my $local_line = $_[0];
-
 	$global_data->lines($global_data->lines+1);
 	if ($global_data->in_function == 1)
 	{
@@ -2102,6 +2165,12 @@ sub analyze_module
 		$current_function->lines($current_function->lines + 1);
 		$current_path->lines($current_path->lines + 1);
 	}
+}
+
+#/* Cモジュール解析処理 */
+sub analyze_module
+{
+	my $local_line = $_[0];
 
 	#/* 空行 */
 	if ($local_line eq "\n")
@@ -2122,6 +2191,7 @@ sub analyze_module
 			$current_function->comment($current_function->comment + 1);
 			$current_path->comment($current_path->comment + 1);
 		}
+		&count_lines();
 		return;
 	}
 
@@ -2138,6 +2208,7 @@ sub analyze_module
 		push @include_files, $path;
 		
 		#/* #include は実効ステップとしてカウント */
+		&count_lines();
 		&count_steps();
 		return;
 	}
@@ -2153,6 +2224,7 @@ sub analyze_module
 
 		print "include $path\n";
 		#/* #include は実効ステップとしてカウント */
+		&count_lines();
 		&count_steps();
 		push @include_files, $path;
 		return;
@@ -2164,11 +2236,12 @@ sub analyze_module
 #		print "ignore directive \#$'\n";
 		if ($local_line =~ /^\#define __C_ANALYZE_LITERALS_/)
 		{
-			#/* リテラル定義はツールが勝手に足している行なので実効ステップのカウントから除外 */
+			#/* リテラル定義はツールが勝手に足している行なのでライン数、実効ステップのカウントから除外 */
 		}
 		else
 		{
 			#/* マクロ定義などは実効ステップとしてカウント */
+			&count_lines();
 			&count_steps();
 		}
 		return;
@@ -2176,6 +2249,7 @@ sub analyze_module
 	else
 	{
 		#/* 空行、コメント行、ディレクティブ以外は実効ステップとしてカウント */
+		&count_lines();
 		&count_steps();
 	}
 
@@ -2491,6 +2565,7 @@ sub clear_current_sentence
 
 	$current_sentence->lvalue("");
 	$current_sentence->rvalue("");
+	$current_sentence->new_typedef("");
 
 	@{$current_sentence->words} = ();
 #	&disp_current_words();
@@ -2540,12 +2615,58 @@ sub add_word_to_text
 }
 
 
+
+#/* 新規型定義追加 */
+sub create_typedef
+{
+	my $new_typedef;
+
+	$new_typedef = TypeDefs->new();
+	$new_typedef->name("");
+	$new_typedef->tag("");
+	$new_typedef->type("none");
+
+	#/* コメントを拾う */
+	$new_typedef->summary(&pop_comment(0));
+	
+	return $new_typedef;
+}
+
+
+#/* 新規型定義追加 */
+sub add_typedef
+{
+	my $type = $_[0];
+	my $is_func = $_[1];
+	my $new_typedef = &create_typedef();
+
+	$new_typedef->name($type->name);
+	$new_typedef->tag($type->tag);
+	$new_typedef->summary($type->summary);
+	$new_typedef->members($type->members);
+	$new_typedef->members_s($type->members_s);
+	$new_typedef->values($type->values);
+	$new_typedef->type($type->type);
+	if ($is_func)
+	{
+		push @{$current_function->typedefs}, $new_typedef;
+	}
+	else
+	{
+		push @global_typedefs, $new_typedef;
+	}
+}
+
+
+
+
 #/* まず最初のワードを決定する */	
 sub analyze_global_first_word
 {
 	my $temp_text = "";
 	my $loop = $_[0];
 	my @local_array = @{$current_sentence->words};
+	my $new_typedef;
 
 	for (    ; $loop < @local_array; $loop++)
 	{
@@ -2553,9 +2674,22 @@ sub analyze_global_first_word
 		{
 			#/* typedefはとりあえず覚えておく */
 			$current_sentence->typedef(1);
+			$current_sentence->new_typedef(&create_typedef());
 		}
 		elsif ($local_array[$loop] =~/^(struct|union|enum)$/)
 		{
+			if ($current_sentence->new_typedef eq "")
+			{
+				print "$1 define without typedef! @local_array\n";
+				$current_sentence->new_typedef(&create_typedef());
+			}
+
+			$new_typedef = $current_sentence->new_typedef;
+			if ($new_typedef->type eq "none")
+			{
+				$new_typedef->type($1);
+			}
+
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			if ($loop + 1 == @local_array)
 			{
@@ -2567,6 +2701,10 @@ sub analyze_global_first_word
 			{
 				#/* 構造体などのタグ名はここで処理する（まだ型は確定していない） */
 				$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
+				if ($new_typedef->tag eq "")
+				{
+					$new_typedef->tag($1);
+				}
 				$loop++;
 
 				if ($loop + 1 == @local_array)
@@ -3161,24 +3299,8 @@ sub new_function
 	$current_function->steps(0);
 	$current_function->make_tree(0);
 
-	if ($current_brief ne "")
-	{
-		#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
-		$current_brief =~ s/^\s*//;
-		$current_function->summary($current_brief);
-		$current_brief = "";
-		$current_comment = "";
-		$first_comment   = "";
-	}
-	else
-	{
-		#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
-		$first_comment =~ s/^\s*//;
-		$current_comment =~ s/^\s*//;
-		$current_function->summary($first_comment);
-		$current_comment = "";
-		$first_comment   = "";
-	}
+	#/* コメントを拾う */
+	$current_function->summary(&pop_comment(1));
 
 	$current_function->static($current_sentence->static);
 	@{$current_function->texts}      = ($current_sentence->text);
@@ -3191,7 +3313,7 @@ sub new_function
 	@{$current_function->func_ref}   = ();
 	@{$current_function->label}      = ();
 	@{$current_function->local_val}  = ();
-	%{$current_function->typedefs}   = ();
+	@{$current_function->typedefs}   = ();
 
 	&analyze_arg_list();
 
@@ -3302,18 +3424,18 @@ sub add_variable
 	my $name = $current_sentence->name;
 	my $astarisk = $current_sentence->astarisk;
 	my $new_variable = Variables->new();
+	my $new_typedef = $current_sentence->new_typedef;
 
 	if ($current_sentence->typedef)
 	{
 		print "typedef! [$name] as [$type]\n";
-		if ($global_data->in_function == 1)
+		$new_typedef->name($name);
+		if (@{$new_typedef->members} == 0)
 		{
-			${$current_function->typedefs}{$name} = $type;
+			push @{$new_typedef->members}, $type;
 		}
-		else
-		{
-			$global_typedefs{$name} = $type;
-		}
+
+		&add_typedef($new_typedef, $global_data->in_function);
 	}
 	else
 	{
@@ -3326,23 +3448,8 @@ sub add_variable
 		$new_variable->static($current_sentence->static);
 		$new_variable->const($current_sentence->const);
 
-		if ($current_brief ne "")
-		{
-			#/* @briefコメントがある場合は、そちらを優先(先頭の空白は取っ払う) */
-			$current_brief =~ s/^\s*//;
-			$new_variable->summary($current_brief);
-			$current_brief = "";
-			$current_comment = "";
-			$first_comment   = "";
-		}
-		else
-		{
-			#/* @briefコメントがない場合は、直近もしくは同一行後方のコメントを採用(先頭の空白は取っ払う) */
-			$current_comment =~ s/^\s*//;
-			$new_variable->summary($current_comment);
-			$current_comment = "";
-			$first_comment   = "";
-		}
+		#/* コメントを拾う */
+		$new_variable->summary(&pop_comment(0));
 
 		@{$new_variable->func_read}  = ();
 		@{$new_variable->func_write} = ();
@@ -3388,14 +3495,20 @@ sub add_free_word
 }
 
 
+#/* if文の処理 */
 sub analyze_if
 {
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 	my $condition = "";
 
-	#/* if文の処理 */
-	($loop+1 < @local_array) or die "strange if sentence!\n";
+	if ($loop+1 >= @local_array)
+	{
+		#/* 条件式が始まらない場合 */
+		$current_sentence->clear(0);
+		$current_sentence->position($_[0]);
+		return @local_array - 1;
+	}
 
 	if ($local_array[$loop+1] ne "(")
 	{
@@ -3906,10 +4019,15 @@ sub analyze_some_bracket
 	my $open_bracket = $local_array[$loop];
 	my $close_bracket = "";
 	my $nest = 1;
+	my $typedef = 0;
 
 	if ($open_bracket eq "{")
 	{
 		$close_bracket = "}";
+		if ($current_sentence->typedef)
+		{
+			$typedef = 1;
+		}
 	}
 	elsif ($open_bracket eq "(")
 	{
@@ -4132,7 +4250,12 @@ sub analyze_function_sentence_type
 	}
 	elsif ($word =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 	{
-		(@local_array > 1) or die "strange sentence0!\n";
+		if (@local_array <= 1)
+		{
+			#/* 次行に持ち越し */
+			$current_sentence->clear(0);
+			return SENTENCE_FORMULA;
+		}
 
 		if ($local_array[1] eq ":")
 		{
@@ -4588,20 +4711,23 @@ sub analyze_function_line
 	}
 
 	$sentence_type = &analyze_function_sentence_type();
-	$current_sentence->sentence($sentence_type);
-	if ($sentence_type == SENTENCE_CONTROL)
+	if ($current_sentence->clear == 1)
 	{
-		#/* 制御文の処理 */
-		my $func = $analyze_controls{$local_array[0]};
-		&$func(0);
-	}
-	elsif ($sentence_type == SENTENCE_DECLARE)
-	{
-		&analyze_declare_line();
-	}
-	else
-	{
-		&analyze_formula_line();
+		$current_sentence->sentence($sentence_type);
+		if ($sentence_type == SENTENCE_CONTROL)
+		{
+			#/* 制御文の処理 */
+			my $func = $analyze_controls{$local_array[0]};
+			&$func(0);
+		}
+		elsif ($sentence_type == SENTENCE_DECLARE)
+		{
+			&analyze_declare_line();
+		}
+		else
+		{
+			&analyze_formula_line();
+		}
 	}
 
 	if ($current_sentence->clear == 1)
@@ -4700,9 +4826,9 @@ sub output_result
 
 	printf OUT_FILE_OUT "\ntype defs\n";
 	printf OUT_FILE_OUT "\tname\ttype\n";
-	foreach my $key (sort(keys(%global_typedefs)))
+	foreach my $typedef (@global_typedefs)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\n", $key,$global_typedefs{$key};
+		printf OUT_FILE_OUT "\t%s\t%s\n", $typedef->name, @{$typedef->members}[0];
 	}
 
 
@@ -4798,7 +4924,14 @@ sub output_result
 		if (0 < @pu_files)
 		{
 			print "do pu convert!!! @pu_files\n";
-			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+			if ($charset_utf)
+			{
+				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files -charset UTF-8")
+			}
+			else
+			{
+				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+			}
 		}
 	}
 
@@ -4820,7 +4953,14 @@ sub output_result
 	if ($jar_path ne "")
 	{
 		print "do pu convert!!! $out_file\n";
-		system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file")
+		if ($charset_utf)
+		{
+			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file -charset UTF-8")
+		}
+		else
+		{
+			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file")
+		}
 	}
 
 	close(OUT_FUNC_TREE);
@@ -5097,14 +5237,20 @@ sub check_typedefs
 {
 	my $name = $_[0];
 
-	if (exists ($global_typedefs{$name}))
+	foreach my $typedef (@global_typedefs)
 	{
-		return 1;
+		if ($typedef->name eq $name)
+		{
+			return 1;
+		}
 	}
 
-	if (exists (${$current_function->typedefs}{$name}))
+	foreach my $typedef (@{$current_function->typedefs})
 	{
-		return 1;
+		if ($typedef->name eq $name)
+		{
+			return 1;
+		}
 	}
 
 	return 0;
