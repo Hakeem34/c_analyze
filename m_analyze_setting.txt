@@ -9,6 +9,11 @@
 plantuml C:\Users\tkubo\.vscode\extensions\jebbs.plantuml-2.16.0\plantuml.jar
 
 
+###################################################
+# デフォルトの文字コード(SJIS or UTF8)
+
+default_charset SJIS
+
 
 ###################################################
 # モジュール名
@@ -20,15 +25,15 @@ module_name sample
 ###################################################
 # 解析対象のソースコードを列挙する
 
-source sample\sample.c 
-source sample\sample2.c 
-source sample\sample3.c 
-source sample\sample4.c 
-source sample\sample5.c 
-source sample\sample6.c 
-source sample\sample7.c 
-source sample\sample8.c 
-source sample\sample9.c 
+source sample\sample.c
+source sample\sample2.c
+source sample\sample3.c
+source sample\sample4.c
+source sample\sample5.c
+source sample\sample6.c
+source sample\sample7.c
+source sample\sample8.c
+source sample\sample9.c
 source sample\sample10.c
 
 
