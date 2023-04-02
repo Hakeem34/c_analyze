@@ -37,3 +37,8 @@ source sample\sample9.c
 source sample\sample10.c
 
 
+###################################################
+# callƒcƒŠ[ì¬‘ÎÛŠÖ”
+
+calltree main
+
