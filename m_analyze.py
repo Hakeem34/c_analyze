@@ -42,51 +42,54 @@ g_charset_utf      = 0
 g_modules          = []
 
 class cVariable:
-    name        = ""
-    type        = ""
-    summary     = ""
-    init_val    = ""
-    is_static   = 0
-    is_const    = 0
-    is_extern   = 0
-    func_read   = []
-    func_write  = []
+    def __init__(self):
+        self.name        = ""
+        self.type        = ""
+        self.summary     = ""
+        self.init_val    = ""
+        self.is_static   = 0
+        self.is_const    = 0
+        self.is_extern   = 0
+        self.func_read   = []
+        self.func_write  = []
 
 class cFunction:
-    name        = ""
-    ret_type    = ""
-    summary     = ""
-    is_static   = 0
-    lines       = 0
-    steps       = 0
-    comments    = 0
-    paths       = 0
-    args        = []
-    local_vars  = []
-    func_call   = []
-    func_called = []
-    var_read    = []
-    var_write   = []
+    def __init__(self):
+        self.name        = ""
+        self.ret_type    = ""
+        self.summary     = ""
+        self.is_static   = 0
+        self.lines       = 0
+        self.steps       = 0
+        self.comments    = 0
+        self.paths       = 0
+        self.args        = []
+        self.local_vars  = []
+        self.func_call   = []
+        self.func_called = []
+        self.var_read    = []
+        self.var_write   = []
 
 class cModule:
-    name         = ""
-    lines        = 0
-    steps        = 0
-    comments     = 0
-    paths        = 0
-    current_mode = ""
-    includes     = []
-    macros       = []
-    typedefs     = []
-    variables    = []
-    functions    = []
-    module_ref   = []
-    module_refed = []
+    def __init__(self):
+        self.name         = ""
+        self.lines        = 0
+        self.steps        = 0
+        self.comments     = 0
+        self.paths        = 0
+        self.current_mode = ""
+        self.includes     = []
+        self.macros       = []
+        self.typedefs     = []
+        self.variables    = []
+        self.functions    = []
+        self.module_ref   = []
+        self.module_refed = []
 
-    #/* 内部処理用変数 */
-    skip_line    = 0
-    detail_phase = 0
-    current_func = 0
+        #/* 内部処理用変数 */
+        self.skip_line    = 0
+        self.detail_phase = 0
+        self.current_func = 0
 
     def get_function(self, name):
         for function in self.functions:
@@ -99,13 +102,13 @@ class cModule:
 #       print ("chack_top_level")
         if (result := re_total_lines.match(line)):
             print ("Total Lines  : " + result.group(1))
-            self.lines = result.group(1)
+            self.lines = int(result.group(1))
         elif (result := re_total_steps.match(line)):
             print ("Total Steps  : " + result.group(1))
-            self.steps = result.group(1)
+            self.steps = int(result.group(1))
         elif (result := re_total_comments.match(line)):
             print ("Total Comments  : " + result.group(1))
-            self.comments = result.group(1)
+            self.comments = int(result.group(1))
         elif (result := re_inc_files.match(line)):
             return "include"
         elif (result := re_macro_defs.match(line)):
@@ -149,8 +152,8 @@ class cModule:
             aVariable.name      = result.group(2)
             aVariable.init_val  = result.group(3)
             aVariable.summary   = result.group(4)
-            aVariable.is_static = result.group(5)
-            aVariable.is_extern = result.group(6)
+            aVariable.is_static = int(result.group(5))
+            aVariable.is_extern = int(result.group(6))
             return aVariable
         return None
 
@@ -164,11 +167,11 @@ class cModule:
             aFunction.name      = result.group(1)
             aFunction.ret_type  = result.group(2)
             aFunction.summary   = result.group(3)
-            aFunction.is_static = result.group(4)
-            aFunction.lines = result.group(5)
-            aFunction.steps = result.group(6)
-            aFunction.comments = result.group(7)
-            aFunction.paths = result.group(8)
+            aFunction.is_static = int(result.group(4))
+            aFunction.lines = int(result.group(5))
+            aFunction.steps = int(result.group(6))
+            aFunction.comments = int(result.group(7))
+            aFunction.paths = int(result.group(8))
             return aFunction
         return None
 
@@ -252,7 +255,7 @@ class cModule:
             elif (self.current_mode == "variable"):
                 ret_val = self.parse_variable_line(line)
                 if (ret_val != None):
-#                   print("add variable!")
+                    print("add variable! : %s" % ret_val.name)
                     self.variables.append(ret_val)
             elif (self.current_mode == "function"):
                 ret_val = self.parse_function_line(line)
@@ -265,7 +268,27 @@ class cModule:
 
         csv.close();
 
+    #/*****************************************************************************/
+    #/* スタティック変数のチェック                                                */
+    #/*****************************************************************************/
+    def check_static_variable(self):
+#       print("check_static_variable! : %s" % self.name)
+#       print("lines : %d" % self.lines)
+        for variable in self.variables:
+            if (variable.is_static):
+                print("static variable : %s" % variable.name)
 
+                for function in self.functions:
+                    for var in function.var_read:
+                        if (var == variable.name):
+                            print("  read by    : %s" % function.name)
+                            variable.func_read.append(function.name)
+
+                for function in self.functions:
+                    for var in function.var_write:
+                        if (var == variable.name):
+                            print("  written by : %s" % function.name)
+                            variable.func_write.append(function.name)
 
 #/*****************************************************************************/
 #/* サブディレクトリの生成                                                    */
@@ -446,8 +469,13 @@ def module_analyze():
         print("read csv : %s" % csv_file_name, file = sys.__stdout__);
         csv_file_name = g_output_fld + "\\" + csv_file_name
         module = cModule()
+        module.name = os.path.basename(source_file)
         module.load_csv(csv_file_name)
         g_modules.append(module)
+
+    for module in g_modules:
+        module.check_static_variable()
+
 
 
 
