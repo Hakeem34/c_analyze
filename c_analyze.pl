@@ -5303,7 +5303,13 @@ sub check_global_variable
 	foreach $variable (@global_variables)
 	{
 #		printf "check %s == %s ?\n", $name, $variable->name;
-		if ($variable->name eq $name)
+		my $tmp_name = $variable->name;
+		if ($tmp_name =~ /([_A-Za-z][_A-Za-z0-9]*)\[.*\]/)
+		{
+			$tmp_name = $1;
+		}
+
+		if ($tmp_name eq $name)
 		{
 			return 1;
 		}

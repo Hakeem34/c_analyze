@@ -3,6 +3,7 @@ import sys
 import re
 import datetime
 import subprocess
+import openpyxl
 
 
 #/* 正規表現 */
@@ -25,7 +26,9 @@ re_detail_func2call = re.compile(r"^\tFunctions call to\n$")
 re_detail_called    = re.compile(r"^\tcalled from\n$")
 re_detail_var_wr    = re.compile(r"^\tVariables write to\n$")
 re_detail_var_rd    = re.compile(r"^\tVariables read from\n$")
-re_detail_array      = re.compile(r"^\t\[(\d+)\]\t([^\n]+)\n$")
+re_detail_array     = re.compile(r"^\t\[(\d+)\]\t([^\n]+)\n$")
+
+re_array_variable   = re.compile(r"([_A-Za-z][_A-Za-z0-9]*)\[.*\]")
 
 
 #/* グローバル変数 */
@@ -40,6 +43,7 @@ g_jar_path         = ""
 g_exec_c_analyze   = 1
 g_charset_utf      = 0
 g_modules          = []
+g_call_tree        = []
 
 class cVariable:
     def __init__(self):
@@ -97,6 +101,15 @@ class cModule:
                 return function
 
         return
+
+
+    def get_variable(self, name):
+        for variable in self.variables:
+            if (variable.name == name):
+                return variable
+
+        return
+
 
     def check_top_level(self, line):
 #       print ("chack_top_level")
@@ -212,11 +225,11 @@ class cModule:
             if (result := re_detail_var_rd.match(line)):
                 self.detail_phase = 5
             elif (result := re_detail_array.match(line)):
-                self.current_func.var_read.append(result.group(2))
+                self.current_func.var_write.append(result.group(2))
         elif (self.detail_phase == 5):
             #/* 最後、読み出す変数がヒットしなくなったら、次の関数を探す */
             if (result := re_detail_array.match(line)):
-                self.current_func.var_write.append(result.group(2))
+                self.current_func.var_read.append(result.group(2))
             else:
                 self.detail_phase = 0
         return
@@ -277,16 +290,20 @@ class cModule:
         for variable in self.variables:
             if (variable.is_static):
                 print("static variable : %s" % variable.name)
+                tmp_name = variable.name
+                if (result := re_array_variable.match(tmp_name)):
+#                   print("match array!")
+                    tmp_name = result.group(1)
 
                 for function in self.functions:
                     for var in function.var_read:
-                        if (var == variable.name):
+                        if (var == tmp_name):
                             print("  read by    : %s" % function.name)
                             variable.func_read.append(function.name)
 
                 for function in self.functions:
                     for var in function.var_write:
-                        if (var == variable.name):
+                        if (var == tmp_name):
                             print("  written by : %s" % function.name)
                             variable.func_write.append(function.name)
 
@@ -379,15 +396,18 @@ def check_command_line_option():
 def read_setting_file():
     global g_target_files
     global g_charset_utf
+    global g_module_name
+    global g_call_tree
 
     print("read_setting_file");
     f = open(g_setting_file, 'r')
     lines = f.readlines()
 
-    re_source  = re.compile(r"source\s+(.+)\n")
-    re_jar     = re.compile(r"plantuml[ \t]+([^\s]+)")
-    re_module  = re.compile(r"module_name[ \t]+([^\s]+)")
-    re_charset = re.compile(r"default_charset[ \t]+([^\s]+)")
+    re_source   = re.compile(r"source\s+(.+)\n")
+    re_jar      = re.compile(r"plantuml[ \t]+([^\s]+)")
+    re_module   = re.compile(r"module_name[ \t]+([^\s]+)")
+    re_charset  = re.compile(r"default_charset[ \t]+([^\s]+)")
+    re_calltree = re.compile(r"calltree[ \t]+([^\s]+)")
 
     for line in lines:
 #       print ("line:%s" % line)
@@ -400,6 +420,9 @@ def read_setting_file():
         elif (result := re_module.match(line)):
             print ("module   : " + result.group(1))
             g_module_name = result.group(1)
+        elif (result := re_calltree.match(line)):
+            print ("calltree : " + result.group(1))
+            g_call_tree.append(result.group(1))
         elif (result := re_charset.match(line)):
             print ("charset  : " + result.group(1))
             if (result.group(1) == "UTF8"):
@@ -478,6 +501,106 @@ def module_analyze():
 
 
 
+#/*****************************************************************************/
+#/* 変数一覧出力                                                              */
+#/*****************************************************************************/
+def out_variable_list():
+    wb = openpyxl.Workbook()
+    ws = wb.worksheets[0]
+    ws.title = "変数一覧"
+
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "型"
+    ws.cell(row, col + 2).value = "変数名"
+    ws.cell(row, col + 3).value = "説明"
+
+    row += 1
+    for module in g_modules:
+        for variable in module.variables:
+            ws.cell(row, col    ).value = module.name
+            ws.cell(row, col + 1).value = variable.type
+            ws.cell(row, col + 2).value = variable.name
+            ws.cell(row, col + 3).value = variable.summary
+            row += 1
+
+
+    ws = wb.create_sheet("変数一覧(詳細)")
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "型"
+    ws.cell(row, col + 2).value = "変数名"
+    ws.cell(row, col + 3).value = "説明"
+    ws.cell(row, col + 4).value = "参照している関数"
+    ws.cell(row, col + 5).value = "更新している関数"
+    row += 1
+    for module in g_modules:
+        for variable in module.variables:
+            ws.cell(row, col    ).value = module.name
+            ws.cell(row, col + 1).value = variable.type
+            ws.cell(row, col + 2).value = variable.name
+            ws.cell(row, col + 3).value = variable.summary
+
+            row_start = row
+            for reader in variable.func_read:
+                ws.cell(row_start, col + 4).value = reader
+                row_start += 1
+            row_end = row_start
+
+            row_start = row
+            for writer in variable.func_write:
+                ws.cell(row_start, col + 5).value = writer
+                row_start += 1
+
+            if (row_start > row_end):
+                row_end = row_start
+
+            if (row_end > row + 1):
+                #/* セル結合処理 */
+                ws.merge_cells(start_row = row, end_row = row_end - 1, start_column = 2, end_column = 2)
+                ws.merge_cells(start_row = row, end_row = row_end - 1, start_column = 3, end_column = 3)
+                ws.merge_cells(start_row = row, end_row = row_end - 1, start_column = 4, end_column = 4)
+                ws.merge_cells(start_row = row, end_row = row_end - 1, start_column = 5, end_column = 5)
+
+            if (row == row_end):
+                row_end += 1
+
+            row = row_end
+
+
+
+    out_file_name = g_output_fld + "\\" + g_module_name + "_variables.xlsx"
+    
+
+    wb.save(out_file_name)
+
+
+
+#/*****************************************************************************/
+#/* Call Tree生成                                                             */
+#/*****************************************************************************/
+def out_call_tree():
+    global g_call_tree
+    print("out_call_tree")
+
+    for target in g_call_tree:
+        print("call tree : %s" % target)
+        for module in g_modules:
+            target_func = module.get_function(target)
+            if (target_func != None):
+                break
+
+        if (target_func != None):
+            print("call tree find : %s" % target)
+        else:
+            print("call tree target not found : %s" % target)
+
+#           for function in module.functions:
+#               if (function.name == target):
+
+
 
 #/*****************************************************************************/
 #/* メイン関数                                                                */
@@ -492,6 +615,9 @@ def main():
         c_analyze()
 
     module_analyze()
+
+    out_variable_list()
+    out_call_tree()
 
 
 
