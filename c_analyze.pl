@@ -69,9 +69,11 @@ struct Macros => {
 struct TypeDefs => {
 	name         => '$',       #/* 型名                       */
 	tag          => '$',       #/* タグ名                     */
+	member_text  => '$',       #/* 従来の定義内容             */
 	members      => '@',       #/* メンバー                   */
 	members_s    => '@',       #/* メンバーの概要             */
-	values       => '@',       #/* enumの値                   */
+	values       => '@',       #/* enumの値/structの型        */
+	nests        => '@',       #/* ネストレベル               */
 	type         => '$',       #/* none/enum/struct/union     */
 	summary      => '$',       #/* 概要コメント               */
 };
@@ -178,6 +180,9 @@ struct CurrentSentence => {
 	lvalue     => '$',       #/* 左辺値                     */
 	rvalue     => '$',       #/* 右辺値                     */
 	new_typedef=> '$',       #/* 新規の型定義               */
+	typedef_pos=> '$',       #/* 新規の型定義の解析位置情報 */
+	typedef_tag=> '$',       #/* 新規の型定義の付加情報     */
+	typedef_val=> '$',       #/* enum定義の現在値           */
 };
 
 
@@ -241,6 +246,26 @@ my %analyze_controls = (
 
 
 &main();
+
+sub is_int
+{
+	my $arg = $_[0];
+
+	if ($arg =~ /[+-]*0[xX][0-9a-fA-F]+[uUlL]*/)
+	{
+		print("$arg is int!\n");
+		return 1;
+	}
+	elsif ($arg =~ /[+-]*[0-9]*[uUlL]*/)
+	{
+		print("$arg is int!\n");
+		return 1;
+	}
+
+	print("$arg is not int!\n");
+	return 0;
+}
+
 
 sub init_variables
 {
@@ -840,6 +865,7 @@ sub is_valid_macro
 sub pop_comment
 {
 	my $prioritize_fisrt = $_[0];
+	my $clear_hard_tab   = $_[1];
 	my $ret_text = "";
 
 	if ($current_brief ne "")
@@ -867,7 +893,16 @@ sub pop_comment
 		$current_comment = "";
 		$first_comment   = "";
 	}
-	
+
+	if ($clear_hard_tab)
+	{
+		$ret_text =~ s/\t/ /g;								#/* ハードタブ排除 */
+		if ($ret_text eq "")
+		{
+			$ret_text = " ";
+		}
+	}
+
 	return $ret_text;
 }
 
@@ -1266,10 +1301,10 @@ sub new_macro
 	$local_macro->value($value);
 	$local_macro->is_extra($is_ex);
 
-	print "new_macro! $name\n";
+#	print "new_macro! $name\n";
 
 	#/* コメントを拾う */
-	$local_macro->summary(&pop_comment(0));
+	$local_macro->summary(&pop_comment(0, 1));
 
 	if ($args eq "")
 	{
@@ -2567,6 +2602,9 @@ sub clear_current_sentence
 	$current_sentence->lvalue("");
 	$current_sentence->rvalue("");
 	$current_sentence->new_typedef("");
+	$current_sentence->typedef_pos(0);
+	$current_sentence->typedef_tag(0);
+	$current_sentence->typedef_val("");
 
 	@{$current_sentence->words} = ();
 #	&disp_current_words();
@@ -2626,9 +2664,10 @@ sub create_typedef
 	$new_typedef->name("");
 	$new_typedef->tag("");
 	$new_typedef->type("none");
+	$new_typedef->members(());
 
 	#/* コメントを拾う */
-	$new_typedef->summary(&pop_comment(0));
+	$new_typedef->summary(&pop_comment(0, 1));
 	
 	return $new_typedef;
 }
@@ -2644,9 +2683,11 @@ sub add_typedef
 	$new_typedef->name($type->name);
 	$new_typedef->tag($type->tag);
 	$new_typedef->summary($type->summary);
+	$new_typedef->member_text($type->member_text);
 	$new_typedef->members($type->members);
 	$new_typedef->members_s($type->members_s);
 	$new_typedef->values($type->values);
+	$new_typedef->nests($type->nests);
 	$new_typedef->type($type->type);
 	if ($is_func)
 	{
@@ -2763,6 +2804,7 @@ sub analyze_global_first_word
 		}
 		elsif ($local_array[$loop] eq "{")
 		{
+#			print "analyze_global_first_word : find { \n";
 			$loop = &analyze_some_bracket($loop, \$temp_text);
 			if ($temp_text eq "")
 			{
@@ -3165,6 +3207,7 @@ sub analyze_global_line
 		return;
 	}
 
+#	print "analyze_global_line ; @local_array\n";
 	if ($local_array[@local_array - 1] eq ";")
 	{
 #		print "analyze_global_line ; @local_array\n";
@@ -3211,6 +3254,11 @@ sub analyze_global_line
 	else
 	{
 		#/* 次行に処理を持ち越す */
+		if ($current_sentence->typedef)
+		{
+			#/* typedef解析中だけは、持ち越しつつも逐次処理する */
+			$current_sentence->position(&analyze_global_sentence());
+		}
 #		print "analyze_global_line none @local_array\n";
 	}
 
@@ -3301,16 +3349,7 @@ sub new_function
 	$current_function->make_tree(0);
 
 	#/* コメントを拾う */
-	my $tmp_comment = &pop_comment(1);
-	if ($tmp_comment eq "")
-	{
-		$current_function->summary(" ");
-	}
-	else
-	{
-		$tmp_comment =~ s/\t/ /g;								#/* ハードタブ排除 */
-		$current_function->summary($tmp_comment);
-	}
+	$current_function->summary(&pop_comment(1,1));
 
 	$current_function->static($current_sentence->static);
 	@{$current_function->texts}      = ($current_sentence->text);
@@ -3327,7 +3366,7 @@ sub new_function
 
 	&analyze_arg_list();
 
-	&new_path("", "", 0);
+	&new_path("main", "", 0);
 	$current_function->path($current_path);
 	$current_function->paths(1);
 }
@@ -3438,11 +3477,13 @@ sub add_variable
 
 	if ($current_sentence->typedef)
 	{
-		print "typedef! [$name] as [$type]\n";
+#		print "typedef! [$name] as [$type]\n";
 		$new_typedef->name($name);
-		if (@{$new_typedef->members} == 0)
+		$new_typedef->member_text($type);
+		if ($new_typedef->type eq "none")
 		{
-			push @{$new_typedef->members}, $type;
+			#/* コメントを拾う */
+			$new_typedef->summary(&pop_comment(0,1));
 		}
 
 		&add_typedef($new_typedef, $global_data->in_function);
@@ -3469,16 +3510,7 @@ sub add_variable
 		$new_variable->const($current_sentence->const);
 
 		#/* コメントを拾う */
-		my $tmp_comment = &pop_comment(0);
-		if ($tmp_comment eq "")
-		{
-			$new_variable->summary(" ");
-		}
-		else
-		{
-			$tmp_comment =~ s/\t/ /g;								#/* ハードタブ排除 */
-			$new_variable->summary($tmp_comment);
-		}
+		$new_variable->summary(&pop_comment(0,1));
 
 		@{$new_variable->func_read}  = ();
 		@{$new_variable->func_write} = ();
@@ -3573,13 +3605,14 @@ sub analyze_if
 		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
 		&push_pu_text("elseif (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
+		&create_new_path("else if");
 	}
 	else
 	{
 		&push_pu_text("if (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
+		&create_new_path("if");
 	}
 
-	&create_new_path("if");
 	return $loop;
 }
 
@@ -4048,14 +4081,27 @@ sub analyze_some_bracket
 	my $open_bracket = $local_array[$loop];
 	my $close_bracket = "";
 	my $nest = 1;
-	my $typedef = 0;
+	my $typedef_struct = 0;
+	my $typedef_enum   = 0;
+	my $tmp_def = $current_sentence->new_typedef;
+	my $tmp_pos = $current_sentence->typedef_pos;
 
 	if ($open_bracket eq "{")
 	{
+#		print "analyze_some_bracket{}, $tmp_pos, $loop\n";
 		$close_bracket = "}";
+
+		#/* typedef定義の詳細取得 */
 		if ($current_sentence->typedef)
 		{
-			$typedef = 1;
+			if ($tmp_def->type eq "enum")
+			{
+			    $typedef_enum = 1;
+			}
+			else
+			{
+			    $typedef_struct = 1;
+			}
 		}
 	}
 	elsif ($open_bracket eq "(")
@@ -4083,6 +4129,193 @@ sub analyze_some_bracket
 		elsif ($local_array[$loop] eq $close_bracket)
 		{
 			$nest--;
+		}
+
+		if ($tmp_pos < $loop)
+		{
+			#/* 前回解析位置より進んでいればチェック */
+			if ($typedef_enum)
+			{
+#				print "enum typedef2 : $current_brief : $local_array[$loop]\n";
+				if ($current_sentence->typedef_tag)
+				{
+					#/* $current_sentence->typedef_tagが0で以外ということは、値の定義が明示されている */
+					if ($local_array[$loop] eq "(")
+					{
+						#/* 式、キャストなどで()が出てきたらネストする */
+						$current_sentence->typedef_tag($current_sentence->typedef_tag + 1);
+						$current_sentence->typedef_val($current_sentence->typedef_val . $local_array[$loop])
+					}
+					elsif ($local_array[$loop] eq ")")
+					{
+						$current_sentence->typedef_tag($current_sentence->typedef_tag - 1);
+						$current_sentence->typedef_val($current_sentence->typedef_val . $local_array[$loop])
+					}
+					elsif ($local_array[$loop] eq ",")
+					{
+						if ($current_sentence->typedef_tag == 1)
+						{
+							#/* ()でネストしていない状態で,が出てきたらenum値確定 */
+#							printf("add enum value : %s\n", $current_sentence->typedef_val);
+							push @{$tmp_def->values}, $current_sentence->typedef_val;
+							$current_sentence->typedef_val("");
+							$current_sentence->typedef_tag(0);
+						}
+						else
+						{
+							$current_sentence->typedef_val($current_sentence->typedef_val . $local_array[$loop])
+						}
+					}
+					elsif ($local_array[$loop] eq "}")
+					{
+						#/* }が来たらenum定義終了なので、enum値確定 */
+#						printf("add enum value : %s\n", $current_sentence->typedef_val);
+						push @{$tmp_def->values}, $current_sentence->typedef_val;
+						$current_sentence->typedef_val("");
+					}
+					else
+					{
+						$current_sentence->typedef_val($current_sentence->typedef_val . $local_array[$loop])
+					}
+				}
+				elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+				{
+					if (@{$tmp_def->members} == @{$tmp_def->values})
+					{
+						my $tmp_member = $1;
+#						printf("push symbol to menbers $1 : $tmp_comment\n");
+						push @{$tmp_def->members}, $tmp_member;
+						push @{$tmp_def->members_s}, &pop_comment(0, 1);
+					}
+				}
+				elsif ($local_array[$loop] eq "=")
+				{
+#					print "!!!!equal!!!!\n";
+					$current_sentence->typedef_tag(1);
+				}
+				elsif ($local_array[$loop] =~ /[\,\;]/)
+				{
+					(@{$tmp_def->members} != @{$tmp_def->values}) or die "strange enum typedef!\n";
+					push @{$tmp_def->values}, " ";
+					$current_sentence->typedef_tag(0);
+				}
+				elsif ($local_array[$loop] eq "}")
+				{
+					push @{$tmp_def->values}, " ";
+					$current_sentence->typedef_tag(0);
+				}
+			}
+			elsif ($typedef_struct)
+			{
+				print "struct typedef : $current_brief : $local_array[$loop]\n";
+				if ($local_array[$loop] =~ /^(struct|union)/)
+				{
+					#/* 構造体の中に直接struct/unionを書いちゃうパターン */
+					my $tmp_comment = &pop_comment(0, 1);
+					print "$1 in struct! $tmp_comment\n";
+					push @{$tmp_def->values}, " ";
+					push @{$tmp_def->members}, $1;
+					push @{$tmp_def->members_s}, $tmp_comment;
+					push @{$tmp_def->nests}, $current_sentence->typedef_tag;
+					$current_sentence->typedef_val("");
+				}
+				elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
+				{
+					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
+				}
+				elsif ($local_array[$loop] eq ";")
+				{
+					if ($local_array[$loop - 1] ne "}")
+					{
+						my $tmp_value = "";
+						my $tmp_member = "";
+						my $tmp_comment = "";
+						if ($current_sentence->typedef_val =~ /(.+)\s([^\s]+)( \: [0-9]+)$/)
+						{
+							#/* ビットフィールドを含む定義 */
+							$tmp_value = $1 . $3;
+							$tmp_member = $2;
+						}
+						elsif ($current_sentence->typedef_val =~ /([^\s]+)( \: [0-9]+)$/)
+						{
+							#/* 無名のビットフィールド */
+							$tmp_value = $1 . $2;
+							$tmp_member = " ";
+						}
+						elsif ($current_sentence->typedef_val =~ /(.+)\s(.+\s\[ .+ \])$/)
+						{
+							#/* 配列のメンバー */
+							$tmp_value = $1;
+							$tmp_member = $2;
+						}
+						elsif ($current_sentence->typedef_val =~ /(.+)\s(\( \* .+ \))$/)
+						{
+							#/* 関数ポインタのメンバー */
+							$tmp_value = $1;
+							$tmp_member = $2;
+						}
+						elsif ($current_sentence->typedef_val =~ /(.+)\s([^\s]+)$/)
+						{
+							#/* 通常のメンバー定義 */
+							$tmp_value = $1;
+							$tmp_member = $2;
+						}
+						else
+						{
+							if ($local_array[$loop - 2] ne "}")
+							{
+								my $tmp_text= $current_sentence->typedef_val;
+								die "strange struct typedef!!! : $tmp_text";
+							}
+							else
+							{
+								#/* structに名前つけられた場合、ちょっとお手上げなので、無視する */
+								$current_sentence->typedef_pos($loop);    #/* typedefの解析位置は覚えておく */
+								$loop++;
+								next;
+							}
+						}
+
+						$tmp_comment = &pop_comment(0, 1);
+						print "struct member : $tmp_comment : $tmp_value  -  $tmp_member;\n";
+						push @{$tmp_def->values}, $tmp_value;
+						push @{$tmp_def->members}, $tmp_member;
+						push @{$tmp_def->members_s}, $tmp_comment;
+						push @{$tmp_def->nests}, $current_sentence->typedef_tag;
+						$current_sentence->typedef_val("");
+					}
+				}
+				elsif ($local_array[$loop] eq "{")
+				{
+					$current_sentence->typedef_tag($current_sentence->typedef_tag + 1);
+				}
+				elsif ($local_array[$loop] eq "}")
+				{
+					$current_sentence->typedef_tag($current_sentence->typedef_tag - 1);
+				}
+				elsif ($local_array[$loop] eq ":" )
+				{
+					#/* ビットフィールドの定義 */
+					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
+				}
+				elsif ($local_array[$loop] =~ /^([\[\]\*\(\)\+\-\/])/)
+				{
+					#/* ポインタ、配列の定義、その他配列定義の中でとりうる演算記号（多分、抜け漏れあり） */
+					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
+				}
+				elsif ($local_array[$loop] =~ /([0-9]+)/)
+				{
+					#/* ビットフィールドの定義 */
+					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
+				}
+				else
+				{
+					my $tmp_text = $local_array[$loop];
+					die "strange input : $tmp_text"
+				}
+			}
+
+			$current_sentence->typedef_pos($loop);    #/* typedefの解析位置は覚えておく */
 		}
 
 		if ($nest == 0)
@@ -4639,21 +4872,21 @@ sub analyze_formula_text
 			if (@structs > 0)
 			{
 				#/* 構造体メンバーの参照 */
-				print "read from struct! $structs[0]\n";
+#				print "read from struct! $structs[0]\n";
 				if (check_global_variable($structs[0])) 
 				{
 					my $tmp = "";
 					my $ref = "";
 					foreach my $tmp (@structs) {$ref = $ref . $tmp;}
 					$ref = $ref . $value;
-					printf "in %s : add read struct $ref\n", $current_function->name;
+#					printf "in %s : add read struct $ref\n", $current_function->name;
 					add_array_no_duplicate($current_function->var_read ,$ref);
 				}
 			}
 			elsif (check_global_variable($value)) 
 			{
 				#/* 変数の参照 */
-				printf "in %s : add read variable $value\n", $current_function->name;
+#				printf "in %s : add read variable $value\n", $current_function->name;
 				add_array_no_duplicate($current_function->var_read ,$value);
 			}
 
@@ -4818,7 +5051,7 @@ sub output_result
 	my $macro;
 	my $arg_type;
 	my $arg_name;
-	my $loop;
+	my $loop = 0;
 	my @pu_files = ();
 
 	printf OUT_FILE_OUT "Total Lines\t%s\n", $global_data->lines;
@@ -4854,10 +5087,28 @@ sub output_result
 	}
 
 	printf OUT_FILE_OUT "\ntype defs\n";
-	printf OUT_FILE_OUT "\tname\ttype\n";
+	printf OUT_FILE_OUT "\tname\ttype\tsummary\n";
 	foreach my $typedef (@global_typedefs)
 	{
-		printf OUT_FILE_OUT "\t%s\t%s\n", $typedef->name, @{$typedef->members}[0];
+		my $length   = @{$typedef->members};
+#		printf ("out typedef : %s %d\n", $typedef->name, $length);
+		printf OUT_FILE_OUT ("\t%s\t%s\t%s\n", $typedef->name, $typedef->member_text, $typedef->summary);
+		if ($typedef->type eq "enum")
+		{
+#			printf ("out typedef(enum) : %s %d\n", $typedef->name, $length);
+			for ($loop = 0; $loop < $length; $loop++)
+			{
+				printf OUT_FILE_OUT "\t\t%s\t%s\t%s\n", @{$typedef->members}[$loop], @{$typedef->values}[$loop], @{$typedef->members_s}[$loop];
+			}
+		}
+		elsif ($typedef->type =~ /^struct|union$/)
+		{
+#			printf ("out typedef(struct) : %s %d\n", $typedef->name, $length);
+			for ($loop = 0; $loop < $length; $loop++)
+			{
+				printf OUT_FILE_OUT "\t\t%s\t%s\t%s\t%s\n", @{$typedef->values}[$loop], @{$typedef->members}[$loop], @{$typedef->members_s}[$loop], @{$typedef->nests}[$loop];
+			}
+		}
 	}
 
 
@@ -5161,6 +5412,11 @@ sub return_parent_path
 	{
 		&push_pu_text("endif\n");
 	}
+	elsif ($path_type eq "else if")
+	{
+		&push_pu_text("else (" . CONT_SIZE . "No)\n");
+		&push_pu_text("endif\n");
+	}
 	elsif ($path_type eq "while")
 	{
 		&push_pu_text("endwhile (" . CONT_SIZE . "No)\n");
@@ -5201,7 +5457,7 @@ sub return_parent_path
 	elsif ( ($path_type eq "case") ||
 	        ($path_type eq "default") )
 	{
-		print "close bracket in case, default\n";
+#		print "close bracket in case, default\n";
 	}
 	else
 	{
@@ -5389,12 +5645,10 @@ sub output_path
 {
 	my $path = $_[0];
 	my $text;
+	my $return_from_child = 0;
 
-	foreach $text (@{$path->texts})
-	{
-		my $tmp_text = &restore_literal($text);
-		print OUT_FILE_OUT "\t$tmp_text";
-	}
+	my $tmp_text = "\t" . "\t" x $path->level . $path->type . "_path\n";
+	print OUT_FILE_OUT $tmp_text;
 
 	foreach $text (@{$path->pu_text})
 	{
@@ -5404,9 +5658,20 @@ sub output_path
 #			print "Link $path_level - $1\n";
 			my $child_path = $path->child($1);
 			output_path($child_path);
+			$return_from_child = 1;
 		}
 		else
 		{
+			if ($return_from_child)
+			{
+				#/* 子PATHから復帰して処理がある場合は元のパスを表記 */
+				$return_from_child = 0;
+				if ($path->type ne "switch")
+				{
+					print OUT_FILE_OUT $tmp_text;
+				}
+			}
+
 			$text = &restore_literal($text);
 			print OUT_PU_OUT $text;
 		}
@@ -5438,7 +5703,7 @@ sub read_setting_file
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]+([^\n]+)/)
 		{
-			print "define $1 as $2\n";
+#			print "define $1 as $2\n";
 			&new_macro(1, $1, $2, "");
 		}
 		elsif ($line_text =~ /^define[ \t]+([_A-Za-z][_A-Za-z0-9]*)[ \t]*/)
@@ -5453,7 +5718,7 @@ sub read_setting_file
 		}
 		elsif ($line_text =~ /^extract[ \t]+([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			print "extract $1\n";
+#			print "extract $1\n";
 			&add_array_no_duplicate(\@extracts ,$1);
 		}
 		elsif ($line_text =~ /^include[ \t]+([^\s]+)/)

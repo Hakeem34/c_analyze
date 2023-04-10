@@ -30,6 +30,10 @@ re_detail_array     = re.compile(r"^\t\[(\d+)\]\t([^\n]+)\n$")
 
 re_array_variable   = re.compile(r"([_A-Za-z][_A-Za-z0-9]*)\[.*\]")
 
+re_typedef          = re.compile(r"^\t([^\t]+)\t(struct|union|enum)[^\t]+\t([^\n]+)")
+re_typedef_normal   = re.compile(r"^\t([^\t]+)\t([^\t]+)\t([^\n]+)")
+re_typedef_member   = re.compile(r"^\t\t([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)\n")
+
 
 #/* グローバル変数 */
 g_output_fld       = "m_analyze"
@@ -44,6 +48,19 @@ g_exec_c_analyze   = 1
 g_charset_utf      = 0
 g_modules          = []
 g_call_tree        = []
+
+class cMember:
+    def __init__(self):
+        self.name        = ""
+        self.type        = ""
+        self.summary     = ""
+
+class cTypedef:
+    def __init__(self):
+        self.name        = ""
+        self.type        = ""
+        self.summary     = ""
+        self.members     = []
 
 class cVariable:
     def __init__(self):
@@ -94,6 +111,7 @@ class cModule:
         self.skip_line    = 0
         self.detail_phase = 0
         self.current_func = 0
+        self.current_typedef = None
 
     def get_function(self, name):
         for function in self.functions:
@@ -152,6 +170,39 @@ class cModule:
         return
 
     def parse_type_line(self, line):
+        if (result := re_typedef.match(line)):
+            aTypedef = cTypedef()
+            aTypedef.name    = result.group(1)
+            aTypedef.type    = result.group(2)
+            aTypedef.summary = result.group(3)
+            print("typedef %s line %s - %s" % (aTypedef.type, aTypedef.name, aTypedef.summary))
+            self.current_typedef = aTypedef
+            self.typedefs.append(aTypedef)
+
+        elif (result := re_typedef_normal.match(line)):
+            aTypedef         = cTypedef()
+            aTypedef.name    = result.group(1)
+            aTypedef.type    = result.group(2)
+            aTypedef.summary = result.group(3)
+            print("typedef none line %s - %s - %s" % (aTypedef.type, aTypedef.name, aTypedef.summary))
+            self.typedefs.append(aTypedef)
+        elif (result := re_typedef_member.match(line)):
+            if (self.current_typedef == None):
+                print("strange typedef member!!!!")
+            else:
+                aMember = cMember()
+                aMember.summary = result.group(3)
+                if (self.current_typedef.type == "enum"):
+                    aMember.name = result.group(1)
+                    aMember.type = result.group(2)
+                    print("enum member %s - %s - %s" % (aMember.name, aMember.type, aMember.summary))
+                else:
+                    aMember.name = result.group(2)
+                    aMember.type = result.group(1)
+                    print("struct member %s - %s - %s" % (aMember.type, aMember.name, aMember.summary))
+
+                self.current_typedef.members.append(aMember)
+
         return
 
     #/*****************************************************************************/
@@ -569,11 +620,80 @@ def out_variable_list():
 
             row = row_end
 
-
-
     out_file_name = g_output_fld + "\\" + g_module_name + "_variables.xlsx"
-    
+    wb.save(out_file_name)
 
+
+
+#/*****************************************************************************/
+#/* 変数一覧出力                                                              */
+#/*****************************************************************************/
+def out_define_list():
+    wb = openpyxl.Workbook()
+    ws = wb.worksheets[0]
+    ws.title = "typedef一覧"
+
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "type名"
+    ws.cell(row, col + 2).value = "型"
+    ws.cell(row, col + 3).value = "説明"
+
+    row += 1
+    for module in g_modules:
+        for typedef in module.typedefs:
+            ws.cell(row, col    ).value = module.name
+            ws.cell(row, col + 1).value = typedef.name
+            ws.cell(row, col + 2).value = typedef.type
+            ws.cell(row, col + 3).value = typedef.summary
+            row += 1
+
+
+    ws = wb.create_sheet("enum定義一覧")
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "type名"
+    ws.cell(row, col + 2).value = "型"
+    ws.cell(row, col + 3).value = "説明"
+    for module in g_modules:
+        for typedef in module.typedefs:
+            if (typedef.type == "enum"):
+                ws.cell(row, col    ).value = module.name
+                ws.cell(row, col + 1).value = typedef.name
+                ws.cell(row, col + 2).value = typedef.type
+                ws.cell(row, col + 3).value = typedef.summary
+                row += 1
+                for member in typedef.members:
+                    ws.cell(row, col + 2).value = member.name
+                    ws.cell(row, col + 3).value = member.type
+                    ws.cell(row, col + 4).value = member.summary
+                    row += 1
+
+
+    ws = wb.create_sheet("構造体定義一覧")
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "type名"
+    ws.cell(row, col + 2).value = "型"
+    ws.cell(row, col + 3).value = "説明"
+    for module in g_modules:
+        for typedef in module.typedefs:
+            if ((typedef.type == "struct") | (typedef.type == "union")):
+                ws.cell(row, col    ).value = module.name
+                ws.cell(row, col + 1).value = typedef.name
+                ws.cell(row, col + 2).value = typedef.type
+                ws.cell(row, col + 3).value = typedef.summary
+                row += 1
+                for member in typedef.members:
+                    ws.cell(row, col + 2).value = member.type
+                    ws.cell(row, col + 3).value = member.name
+                    ws.cell(row, col + 4).value = member.summary
+                    row += 1
+
+    out_file_name = g_output_fld + "\\" + g_module_name + "_defines.xlsx"
     wb.save(out_file_name)
 
 
@@ -617,6 +737,7 @@ def main():
     module_analyze()
 
     out_variable_list()
+    out_define_list()
     out_call_tree()
 
 
