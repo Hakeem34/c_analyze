@@ -14,7 +14,7 @@
 # * limitations under the License.
 # */
 #############################################################################
-# CŒ¾ŒêƒvƒƒOƒ‰ƒ€‰ğÍƒXƒNƒŠƒvƒg
+# Cè¨€èªãƒ—ãƒ­ã‚°ãƒ©ãƒ è§£æã‚¹ã‚¯ãƒªãƒ—ãƒˆ
 #
 #
 #############################################################################
@@ -29,6 +29,9 @@ use Class::Struct;
 use Cwd;
 use Digest::MD5;
 
+#use utf8;
+use Encode 'encode';
+
 use constant CONT_SIZE => "<b><size:20>";
 use constant SENTENCE_CONTROL => 0;
 use constant SENTENCE_DECLARE => 1;
@@ -36,158 +39,158 @@ use constant SENTENCE_FORMULA => 2;
 use constant SENTENCE_UNKNOWN => 3;
 
 
-#/* ƒXƒNƒŠƒvƒg“®ì‚Ìİ’è */
-my $output_temp_text = 0;		#/* ®Œ`‚µ‚½CƒR[ƒh‚ğƒtƒ@ƒCƒ‹‚Éo—Í‚·‚é */
-my $log_file_name = "";         #/* ƒƒOƒtƒ@ƒCƒ‹–¼ */
-my $jar_path = "";				#/* JAVA‚ğ‹N“®‚µ‚ÄPUƒtƒ@ƒCƒ‹‚ğ¶¬‚·‚é */
-my $charset_utf = 0;			#/* UTF8w’è */
-my $footer_text = "";			#/* puƒtƒ@ƒCƒ‹‚É‹LÚ‚·‚éfooter */
+#/* ã‚¹ã‚¯ãƒªãƒ—ãƒˆå‹•ä½œã®è¨­å®š */
+my $output_temp_text = 0;		#/* æ•´å½¢ã—ãŸCã‚³ãƒ¼ãƒ‰ã‚’ãƒ•ã‚¡ã‚¤ãƒ«ã«å‡ºåŠ›ã™ã‚‹ */
+my $log_file_name = "";         #/* ãƒ­ã‚°ãƒ•ã‚¡ã‚¤ãƒ«å */
+my $jar_path = "";				#/* JAVAã‚’èµ·å‹•ã—ã¦PUãƒ•ã‚¡ã‚¤ãƒ«ã‚’ç”Ÿæˆã™ã‚‹ */
+my $charset_utf = 0;			#/* UTF8æŒ‡å®š */
+my $footer_text = "";			#/* puãƒ•ã‚¡ã‚¤ãƒ«ã«è¨˜è¼‰ã™ã‚‹footer */
 
 struct GlobalInfo => {
-	lines        => '$',       #/* s”                       */
-	steps        => '$',       #/* ÀŒøƒXƒeƒbƒv”             */
-	comment      => '$',       #/* ƒRƒƒ“ƒgs”               */
-	indent       => '$',       #/* Œ»İ‚ÌƒCƒ“ƒfƒ“ƒg           */
-	section      => '$',       #/* Œ»İ‚ÌƒZƒNƒVƒ‡ƒ“           */
-	in_function  => '$',       #/* Œ»İ‚ÌƒXƒR[ƒv             */
-	bracket_type => '$',       #/* Œ»İ‚Ì{}ƒ^ƒCƒv             */
+	lines        => '$',       #/* è¡Œæ•°                       */
+	steps        => '$',       #/* å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—æ•°             */
+	comment      => '$',       #/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œæ•°               */
+	indent       => '$',       #/* ç¾åœ¨ã®ã‚¤ãƒ³ãƒ‡ãƒ³ãƒˆ           */
+	section      => '$',       #/* ç¾åœ¨ã®ã‚»ã‚¯ã‚·ãƒ§ãƒ³           */
+	in_function  => '$',       #/* ç¾åœ¨ã®ã‚¹ã‚³ãƒ¼ãƒ—             */
+	bracket_type => '$',       #/* ç¾åœ¨ã®{}ã‚¿ã‚¤ãƒ—             */
 };
 
 
-#/* ƒ}ƒNƒ */
+#/* ãƒã‚¯ãƒ­ */
 struct Macros => {
-	name         => '$',       #/* ƒ}ƒNƒ–¼                   */
-	value        => '$',       #/* ’è‹`“à—e                   */
-	is_func      => '$',       #/* ŠÖ”‚©‚Ç‚¤‚©               */
-	args         => '@',       #/* ˆø”                       */
-	is_extra     => '$',       #/* ƒtƒ@ƒCƒ‹ŠO‚Å‚Ì’è‹`‚©H     */
-	summary      => '$',       #/* ŠT—vƒRƒƒ“ƒg               */
+	name         => '$',       #/* ãƒã‚¯ãƒ­å                   */
+	value        => '$',       #/* å®šç¾©å†…å®¹                   */
+	is_func      => '$',       #/* é–¢æ•°ã‹ã©ã†ã‹               */
+	args         => '@',       #/* å¼•æ•°                       */
+	is_extra     => '$',       #/* ãƒ•ã‚¡ã‚¤ãƒ«å¤–ã§ã®å®šç¾©ã‹ï¼Ÿ     */
+	summary      => '$',       #/* æ¦‚è¦ã‚³ãƒ¡ãƒ³ãƒˆ               */
 };
 
 
-#/* Œ^’è‹` */
+#/* å‹å®šç¾© */
 struct TypeDefs => {
-	name         => '$',       #/* Œ^–¼                       */
-	tag          => '$',       #/* ƒ^ƒO–¼                     */
-	member_text  => '$',       #/* ]—ˆ‚Ì’è‹`“à—e             */
-	members      => '@',       #/* ƒƒ“ƒo[                   */
-	members_s    => '@',       #/* ƒƒ“ƒo[‚ÌŠT—v             */
-	values       => '@',       #/* enum‚Ì’l/struct‚ÌŒ^        */
-	nests        => '@',       #/* ƒlƒXƒgƒŒƒxƒ‹               */
+	name         => '$',       #/* å‹å                       */
+	tag          => '$',       #/* ã‚¿ã‚°å                     */
+	member_text  => '$',       #/* å¾“æ¥ã®å®šç¾©å†…å®¹             */
+	members      => '@',       #/* ãƒ¡ãƒ³ãƒãƒ¼                   */
+	members_s    => '@',       #/* ãƒ¡ãƒ³ãƒãƒ¼ã®æ¦‚è¦             */
+	values       => '@',       #/* enumã®å€¤/structã®å‹        */
+	nests        => '@',       #/* ãƒã‚¹ãƒˆãƒ¬ãƒ™ãƒ«               */
 	type         => '$',       #/* none/enum/struct/union     */
-	summary      => '$',       #/* ŠT—vƒRƒƒ“ƒg               */
+	summary      => '$',       #/* æ¦‚è¦ã‚³ãƒ¡ãƒ³ãƒˆ               */
 };
 
 
-#/* ŠÖ”‚ğ•\‚·\‘¢‘Ì */
+#/* é–¢æ•°ã‚’è¡¨ã™æ§‹é€ ä½“ */
 struct Functions => {
-	name	   => '$',       #/* ŠÖ”–¼                     */
-	lines      => '$',       #/* s”                       */
-	texts      => '@',       #/* Œ´•¶                       */
-	steps      => '$',       #/* ÀŒøƒXƒeƒbƒv”             */
-	path	   => '$',       #/* ƒƒCƒ“ƒpƒX                 */
-	paths	   => '$',       #/* •ªŠòƒpƒX”                 */
-	static     => '$',       #/* ƒXƒ^ƒeƒBƒbƒN‚©H           */
-	ret_typ    => '$',       #/* –ß‚è’l                     */
-	args_typ   => '@',       #/* ˆø”Œ^                     */
-	args_name  => '@',       #/* ˆø”–¼                     */
-	write_args => '@',       #/* ƒ|ƒCƒ“ƒ^ˆø”‚É‘‚«‚Ş‚©H */
-	var_read   => '@',       #/* ƒŠ[ƒh‚·‚é•Ï”             */
-	var_write  => '@',       #/* ƒ‰ƒCƒg‚·‚é•Ï”             */
-	func_call  => '@',       #/* ƒR[ƒ‹‚·‚éŠÖ”             */
-	func_ref   => '@',       #/* QÆ‚³‚ê‚Ä‚¢‚éŠÖ”         */
-	comment    => '$',       #/* ƒRƒƒ“ƒgs”               */
-	summary    => '$',       #/* ŠT—vƒRƒƒ“ƒg               */
-	make_tree  => '$',       #/* Tree“WŠJÏ‚İ               */
-	label      => '@',       #/* ƒ‰ƒxƒ‹                     */
-	local_val  => '@',       #/* ƒ[ƒJƒ‹•Ï”               */
-	typedefs   => '@',       #/* ƒ[ƒJƒ‹Œ^’è‹`             */
+	name	   => '$',       #/* é–¢æ•°å                     */
+	lines      => '$',       #/* è¡Œæ•°                       */
+	texts      => '@',       #/* åŸæ–‡                       */
+	steps      => '$',       #/* å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—æ•°             */
+	path	   => '$',       #/* ãƒ¡ã‚¤ãƒ³ãƒ‘ã‚¹                 */
+	paths	   => '$',       #/* åˆ†å²ãƒ‘ã‚¹æ•°                 */
+	static     => '$',       #/* ã‚¹ã‚¿ãƒ†ã‚£ãƒƒã‚¯ã‹ï¼Ÿ           */
+	ret_typ    => '$',       #/* æˆ»ã‚Šå€¤                     */
+	args_typ   => '@',       #/* å¼•æ•°å‹                     */
+	args_name  => '@',       #/* å¼•æ•°å                     */
+	write_args => '@',       #/* ãƒã‚¤ãƒ³ã‚¿å¼•æ•°ã«æ›¸ãè¾¼ã‚€ã‹ï¼Ÿ */
+	var_read   => '@',       #/* ãƒªãƒ¼ãƒ‰ã™ã‚‹å¤‰æ•°             */
+	var_write  => '@',       #/* ãƒ©ã‚¤ãƒˆã™ã‚‹å¤‰æ•°             */
+	func_call  => '@',       #/* ã‚³ãƒ¼ãƒ«ã™ã‚‹é–¢æ•°             */
+	func_ref   => '@',       #/* å‚ç…§ã•ã‚Œã¦ã„ã‚‹é–¢æ•°         */
+	comment    => '$',       #/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œæ•°               */
+	summary    => '$',       #/* æ¦‚è¦ã‚³ãƒ¡ãƒ³ãƒˆ               */
+	make_tree  => '$',       #/* Treeå±•é–‹æ¸ˆã¿               */
+	label      => '@',       #/* ãƒ©ãƒ™ãƒ«                     */
+	local_val  => '@',       #/* ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°               */
+	typedefs   => '@',       #/* ãƒ­ãƒ¼ã‚«ãƒ«å‹å®šç¾©             */
 };
 
 
-#/* ÀsƒpƒX‚ğ•\‚·\‘¢‘ÌB•ªŠò‚µ‚È‚¢ˆê˜A‚Ìˆ— */
+#/* å®Ÿè¡Œãƒ‘ã‚¹ã‚’è¡¨ã™æ§‹é€ ä½“ã€‚åˆ†å²ã—ãªã„ä¸€é€£ã®å‡¦ç† */
 struct Path => {
-	function   => '$',       #/* Š‘®‚·‚éŠÖ”               */
-	lines      => '$',       #/* s”                       */
-	type       => '$',       #/* ƒpƒXí•Ê                   */
-	texts      => '@',       #/* Œ´•¶                       */
-	pu_block   => '$',       #/* ˆ—ƒuƒƒbƒN               */
-	call_block => '$',       #/* ƒuƒƒbƒN“à‚ÌŠÖ”ƒR[ƒ‹—L–³ */
-	pu_text    => '@',       #/* ƒAƒNƒeƒBƒrƒeƒB}—p         */
-	steps      => '$',       #/* ÀŒøƒXƒeƒbƒv”             */
-	parent     => '$',       #/* eƒpƒX                     */
-	child      => '@',       #/* qƒpƒX                     */
-	var_read   => '@',       #/* ƒŠ[ƒh‚·‚é•Ï”             */
-	var_write  => '@',       #/* ƒ‰ƒCƒg‚·‚é•Ï”             */
-	func_call  => '@',       #/* ƒR[ƒ‹‚·‚éŠÖ”             */
-	indent     => '$',       #/* e‚É–ß‚éƒCƒ“ƒfƒ“ƒg         */
-	backward   => '$',       #/* for•¶‚ÌŒJ‚è•Ô‚µˆ—        */
-	switch_val => '$',       #/* switch•¶‚Ì•]‰¿’l           */
-	case_count => '$',       #/* caseƒ‰ƒxƒ‹‚Ì”             */
-	case_val   => '@',       #/* caseƒ‰ƒxƒ‹‚Ì’l             */
-	break      => '$',       #/* breakI’[‚©”Û‚©H          */
-	comment    => '$',       #/* ƒRƒƒ“ƒgs”               */
-	level      => '$',       #/* ƒpƒXƒŒƒxƒ‹                 */
+	function   => '$',       #/* æ‰€å±ã™ã‚‹é–¢æ•°               */
+	lines      => '$',       #/* è¡Œæ•°                       */
+	type       => '$',       #/* ãƒ‘ã‚¹ç¨®åˆ¥                   */
+	texts      => '@',       #/* åŸæ–‡                       */
+	pu_block   => '$',       #/* å‡¦ç†ãƒ–ãƒ­ãƒƒã‚¯               */
+	call_block => '$',       #/* ãƒ–ãƒ­ãƒƒã‚¯å†…ã®é–¢æ•°ã‚³ãƒ¼ãƒ«æœ‰ç„¡ */
+	pu_text    => '@',       #/* ã‚¢ã‚¯ãƒ†ã‚£ãƒ“ãƒ†ã‚£å›³ç”¨         */
+	steps      => '$',       #/* å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—æ•°             */
+	parent     => '$',       #/* è¦ªãƒ‘ã‚¹                     */
+	child      => '@',       #/* å­ãƒ‘ã‚¹                     */
+	var_read   => '@',       #/* ãƒªãƒ¼ãƒ‰ã™ã‚‹å¤‰æ•°             */
+	var_write  => '@',       #/* ãƒ©ã‚¤ãƒˆã™ã‚‹å¤‰æ•°             */
+	func_call  => '@',       #/* ã‚³ãƒ¼ãƒ«ã™ã‚‹é–¢æ•°             */
+	indent     => '$',       #/* è¦ªã«æˆ»ã‚‹ã‚¤ãƒ³ãƒ‡ãƒ³ãƒˆ         */
+	backward   => '$',       #/* foræ–‡ã®ç¹°ã‚Šè¿”ã—å‡¦ç†        */
+	switch_val => '$',       #/* switchæ–‡ã®è©•ä¾¡å€¤           */
+	case_count => '$',       #/* caseãƒ©ãƒ™ãƒ«ã®æ•°             */
+	case_val   => '@',       #/* caseãƒ©ãƒ™ãƒ«ã®å€¤             */
+	break      => '$',       #/* breakçµ‚ç«¯ã‹å¦ã‹ï¼Ÿ          */
+	comment    => '$',       #/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œæ•°               */
+	level      => '$',       #/* ãƒ‘ã‚¹ãƒ¬ãƒ™ãƒ«                 */
 };
 
-#/* •Ï”‚ğ•\‚·\‘¢‘Ì */
+#/* å¤‰æ•°ã‚’è¡¨ã™æ§‹é€ ä½“ */
 struct Variables => {
-	name        => '$',       #/* •Ï”–¼                     */
-	typ         => '$',       #/* Œ^                         */
-	init_val    => '$',       #/* ‰Šú’l                     */
-	extern      => '$',       #/* ŠO•”•Ï”‚©H               */
-	static      => '$',       #/* ƒXƒ^ƒeƒBƒbƒN‚©H           */
-	const       => '$',       #/* ’è”‚©H                   */
-	func_read   => '@',       #/* ƒŠ[ƒh‚·‚éŠÖ”             */
-	func_write  => '@',       #/* ƒ‰ƒCƒg‚·‚éŠÖ”             */
-	section     => '$',       #/* sectionw’è                */
-	forcus      => '$',       #/* Ú×‰ğÍ‘ÎÛ‚©H           */
-	summary     => '$',       #/* ŠT—vƒRƒƒ“ƒg               */
+	name        => '$',       #/* å¤‰æ•°å                     */
+	typ         => '$',       #/* å‹                         */
+	init_val    => '$',       #/* åˆæœŸå€¤                     */
+	extern      => '$',       #/* å¤–éƒ¨å¤‰æ•°ã‹ï¼Ÿ               */
+	static      => '$',       #/* ã‚¹ã‚¿ãƒ†ã‚£ãƒƒã‚¯ã‹ï¼Ÿ           */
+	const       => '$',       #/* å®šæ•°ã‹ï¼Ÿ                   */
+	func_read   => '@',       #/* ãƒªãƒ¼ãƒ‰ã™ã‚‹é–¢æ•°             */
+	func_write  => '@',       #/* ãƒ©ã‚¤ãƒˆã™ã‚‹é–¢æ•°             */
+	section     => '$',       #/* sectionæŒ‡å®š                */
+	forcus      => '$',       #/* è©³ç´°è§£æå¯¾è±¡ã‹ï¼Ÿ           */
+	summary     => '$',       #/* æ¦‚è¦ã‚³ãƒ¡ãƒ³ãƒˆ               */
 };
 
 
 struct CurrentSentence => {
-	text       => '$',       #/* Œ´•¶                       */
-	name       => '$',       #/* •Ï”/ŠÖ”–¼                */
-	typ        => '$',       #/* Œ^                         */
-	typ_fixed  => '$',       #/* Œ^Šm’è                     */
-	name_fixed => '$',       #/* –¼ÌŠm’è                   */
+	text       => '$',       #/* åŸæ–‡                       */
+	name       => '$',       #/* å¤‰æ•°/é–¢æ•°å                */
+	typ        => '$',       #/* å‹                         */
+	typ_fixed  => '$',       #/* å‹ç¢ºå®š                     */
+	name_fixed => '$',       #/* åç§°ç¢ºå®š                   */
 
-	init_val   => '$',       #/* ‰Šú’l                     */
-	typedef    => '$',       #/* typedef•¶                  */
+	init_val   => '$',       #/* åˆæœŸå€¤                     */
+	typedef    => '$',       #/* typedefæ–‡                  */
 	struct     => '$',       #/* struct/union/enum          */
-	extern     => '$',       #/* Cüqextern—L–³           */
-	static     => '$',       #/* Cüqstatic—L–³           */
-	const      => '$',       #/* Cüqconst—L–³            */
-	unsigned   => '$',       #/* Cüqunsigned—L–³         */
-	words      => '@',       #/* ’PŒê                       */
-	position   => '$',       #/* ‰ğÍˆÊ’u                   */
-	astarisk   => '$',       #/* ƒAƒXƒ^ƒŠƒXƒN               */
-	astarisk_f => '$',       #/* ŠÖ”ƒ|ƒCƒ“ƒ^‚ÌƒAƒXƒ^ƒŠƒXƒN */
-	astarisk_u => '$',       #/* –¢”»•Ê‚ÌƒAƒXƒ^ƒŠƒXƒN       */
-	is_func    => '$',       #/* ŠÖ”H                     */
-	arg_list   => '$',       #/* ˆø”ƒŠƒXƒg                 */
+	extern     => '$',       #/* ä¿®é£¾å­externæœ‰ç„¡           */
+	static     => '$',       #/* ä¿®é£¾å­staticæœ‰ç„¡           */
+	const      => '$',       #/* ä¿®é£¾å­constæœ‰ç„¡            */
+	unsigned   => '$',       #/* ä¿®é£¾å­unsignedæœ‰ç„¡         */
+	words      => '@',       #/* å˜èª                       */
+	position   => '$',       #/* è§£æä½ç½®                   */
+	astarisk   => '$',       #/* ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯               */
+	astarisk_f => '$',       #/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ */
+	astarisk_u => '$',       #/* æœªåˆ¤åˆ¥ã®ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯       */
+	is_func    => '$',       #/* é–¢æ•°ï¼Ÿ                     */
+	arg_list   => '$',       #/* å¼•æ•°ãƒªã‚¹ãƒˆ                 */
 
-	clear      => '$',       #/* ƒNƒŠƒAÀ{ƒtƒ‰ƒO           */
-	backward   => '$',       #/* for•¶‚ÌŒJ‚è•Ô‚µˆ—        */
-	switch_val => '$',       #/* switch•¶‚Ì•]‰¿’l           */
-	pu_text    => '$',       #/* ƒAƒNƒeƒBƒrƒeƒB}—p         */
-	case_val   => '$',       #/* caseƒ‰ƒxƒ‹‚Ì’l             */
-	func_call  => '$',       #/* ŠÖ”ƒR[ƒ‹‚Ìƒtƒ‰ƒO         */
+	clear      => '$',       #/* ã‚¯ãƒªã‚¢å®Ÿæ–½ãƒ•ãƒ©ã‚°           */
+	backward   => '$',       #/* foræ–‡ã®ç¹°ã‚Šè¿”ã—å‡¦ç†        */
+	switch_val => '$',       #/* switchæ–‡ã®è©•ä¾¡å€¤           */
+	pu_text    => '$',       #/* ã‚¢ã‚¯ãƒ†ã‚£ãƒ“ãƒ†ã‚£å›³ç”¨         */
+	case_val   => '$',       #/* caseãƒ©ãƒ™ãƒ«ã®å€¤             */
+	func_call  => '$',       #/* é–¢æ•°ã‚³ãƒ¼ãƒ«ã®ãƒ•ãƒ©ã‚°         */
 	case_cond  => '$',       #/*                            */
-	sentence   => '$',       #/* •¶‚Ìƒ^ƒCƒv(®AéŒ¾A§Œä) */
+	sentence   => '$',       #/* æ–‡ã®ã‚¿ã‚¤ãƒ—(å¼ã€å®£è¨€ã€åˆ¶å¾¡) */
 
-	lvalue     => '$',       #/* ¶•Ó’l                     */
-	rvalue     => '$',       #/* ‰E•Ó’l                     */
-	new_typedef=> '$',       #/* V‹K‚ÌŒ^’è‹`               */
-	typedef_pos=> '$',       #/* V‹K‚ÌŒ^’è‹`‚Ì‰ğÍˆÊ’uî•ñ */
-	typedef_tag=> '$',       #/* V‹K‚ÌŒ^’è‹`‚Ì•t‰Áî•ñ     */
-	typedef_val=> '$',       #/* enum’è‹`‚ÌŒ»İ’l           */
+	lvalue     => '$',       #/* å·¦è¾ºå€¤                     */
+	rvalue     => '$',       #/* å³è¾ºå€¤                     */
+	new_typedef=> '$',       #/* æ–°è¦ã®å‹å®šç¾©               */
+	typedef_pos=> '$',       #/* æ–°è¦ã®å‹å®šç¾©ã®è§£æä½ç½®æƒ…å ± */
+	typedef_tag=> '$',       #/* æ–°è¦ã®å‹å®šç¾©ã®ä»˜åŠ æƒ…å ±     */
+	typedef_val=> '$',       #/* enumå®šç¾©ã®ç¾åœ¨å€¤           */
 };
 
 
 
-#/* ƒtƒ@ƒCƒ‹ŠÔ‚Å‹¤’Ê‚Ì•Ï” */
+#/* ãƒ•ã‚¡ã‚¤ãƒ«é–“ã§å…±é€šã®å¤‰æ•° */
 my @c_prepro_word = ("include", "define", "undef", "pragma", "else", "endif", "elif", "ifdef", "ifndef", "error", "if");
 my $output_fld = "c_analyze";
 my @include_paths  = ();
@@ -198,13 +201,14 @@ my $setting_file = "c_analyze_setting.txt";
 my $output_remain = "";
 my @output_lines;
 my @input_lines;
+my $pick_comment_to_pu = 1;
 
 
 #/**********************************/
-#/* ƒtƒ@ƒCƒ‹‚²‚Æ‚É‰Šú‰»•K—v‚È•Ï” */
+#/* ãƒ•ã‚¡ã‚¤ãƒ«ã”ã¨ã«åˆæœŸåŒ–å¿…è¦ãªå¤‰æ•° */
 #/**********************************/
 
-#/* CŒ¾Œê‚Ì®Œ`‚Ég‚¤•Ï” */
+#/* Cè¨€èªã®æ•´å½¢ã«ä½¿ã†å¤‰æ•° */
 my $is_comment = 0;
 my $is_single_comment = 0;
 my $is_literal = 0;
@@ -217,7 +221,7 @@ my @macros = ();
 my @macros_org = ();
 my @global_typedefs = ();
 
-#/* CŒ¾Œê‚Ì‰ğÍ‚Ég‚¤•Ï” */
+#/* Cè¨€èªã®è§£æã«ä½¿ã†å¤‰æ•° */
 my @include_files  = ();
 my @global_variables = ();
 my @functions = ();
@@ -226,16 +230,16 @@ my @path_stack = ();
 my $current_path = "";
 my $global_data = GlobalInfo->new();
 my $current_sentence = CurrentSentence->new();
-my $first_comment    = "";			#/* ƒRƒƒ“ƒgƒuƒƒbƒN‚ÌÅ‰     */
-my $current_comment  = "";			#/* ’¼‹ß‚ÌƒRƒƒ“ƒgi’Psj     */
-my $current_comments = "";			#/* ’¼‹ß‚ÌƒRƒƒ“ƒgi—İÏj     */
-my $current_brief    = "";			#/* ’¼‹ß‚Ì@briefƒRƒƒ“ƒg       */
+my $first_comment    = "";			#/* ã‚³ãƒ¡ãƒ³ãƒˆãƒ–ãƒ­ãƒƒã‚¯ã®æœ€åˆ     */
+my $current_comment  = "";			#/* ç›´è¿‘ã®ã‚³ãƒ¡ãƒ³ãƒˆï¼ˆå˜è¡Œï¼‰     */
+my $current_comments = "";			#/* ç›´è¿‘ã®ã‚³ãƒ¡ãƒ³ãƒˆï¼ˆç´¯ç©ï¼‰     */
+my $current_brief    = "";			#/* ç›´è¿‘ã®@briefã‚³ãƒ¡ãƒ³ãƒˆ       */
 my $in_define = 0;
 my @literals = ();
 
 my @prepare_funcs = (\&comment_parse, \&line_backslash_parse, \&line_define_parse, \&line_parse_1st, \&line_parse_2nd, \&line_indent_parse);
 
-#/* §Œä•¶i•K‚¸ƒZƒ“ƒeƒ“ƒX‚Ìæ“ª‚É—ˆ‚é‚Í‚¸AAAj */
+#/* åˆ¶å¾¡æ–‡ï¼ˆå¿…ãšã‚»ãƒ³ãƒ†ãƒ³ã‚¹ã®å…ˆé ­ã«æ¥ã‚‹ã¯ãšã€ã€ã€ï¼‰ */
 my %analyze_controls = (
                         'if'      => \&analyze_if,      'else'    => \&analyze_else,      'do'       => \&analyze_do,       '{'       => \&analyze_bracket_open,
                         'break'   => \&analyze_break,   'case'    => \&analyze_case,      'continue' => \&analyze_continue, '}'       => \&analyze_bracket_close,
@@ -290,10 +294,10 @@ sub init_variables
 	$global_data->in_function(0);
 	$global_data->bracket_type("none");
 	$current_sentence = CurrentSentence->new();
-	$first_comment    = "";			#/* ƒRƒƒ“ƒgƒuƒƒbƒN‚ÌÅ‰     */
-	$current_comment  = "";			#/* ’¼‹ß‚ÌƒRƒƒ“ƒgi’Psj     */
-	$current_comments = "";			#/* ’¼‹ß‚ÌƒRƒƒ“ƒgi—İÏj     */
-	$current_brief    = "";			#/* ’¼‹ß‚Ì@briefƒRƒƒ“ƒg       */
+	$first_comment    = "";			#/* ã‚³ãƒ¡ãƒ³ãƒˆãƒ–ãƒ­ãƒƒã‚¯ã®æœ€åˆ     */
+	$current_comment  = "";			#/* ç›´è¿‘ã®ã‚³ãƒ¡ãƒ³ãƒˆï¼ˆå˜è¡Œï¼‰     */
+	$current_comments = "";			#/* ç›´è¿‘ã®ã‚³ãƒ¡ãƒ³ãƒˆï¼ˆç´¯ç©ï¼‰     */
+	$current_brief    = "";			#/* ç›´è¿‘ã®@briefã‚³ãƒ¡ãƒ³ãƒˆ       */
 	$in_define = 0;
 	@literals = ();
 	@valid_line = (1);
@@ -315,10 +319,10 @@ sub find_c_files
 #		print "$_\n";
 		my $entry = $_;
 
-		if ($entry =~/\.[cC]$/)         #/* ".c"‚ÅI‚í‚Á‚Ä‚¢‚é */
+		if ($entry =~/\.[cC]$/)         #/* ".c"ã§çµ‚ã‚ã£ã¦ã„ã‚‹ */
 		{
 			print "$entry\n";
-			if ($entry =~/[\/\\]$/)         #/* ".c"‚ÅI‚í‚Á‚Ä‚¢‚é */
+			if ($entry =~/[\/\\]$/)         #/* ".c"ã§çµ‚ã‚ã£ã¦ã„ã‚‹ */
 			{
 				push @target_files, $target_dir . $entry;
 			}
@@ -332,7 +336,7 @@ sub find_c_files
 }
 
 
-#/* ƒRƒ}ƒ“ƒhƒ‰ƒCƒ“ƒIƒvƒVƒ‡ƒ“‚Ì‰ğÍ */
+#/* ã‚³ãƒãƒ³ãƒ‰ãƒ©ã‚¤ãƒ³ã‚ªãƒ—ã‚·ãƒ§ãƒ³ã®è§£æ */
 sub check_command_line_option
 {
 	my $option = "";
@@ -391,7 +395,7 @@ sub check_command_line_option
 }
 
 
-#/* 1sƒeƒLƒXƒgo—Í */
+#/* 1è¡Œãƒ†ã‚­ã‚¹ãƒˆå‡ºåŠ› */
 sub output_line
 {
 	my $local_line = $output_remain . $_[0];
@@ -425,7 +429,7 @@ sub output_line
 }
 
 
-#/* ƒƒCƒ“ŠÖ” */
+#/* ãƒ¡ã‚¤ãƒ³é–¢æ•° */
 sub main
 {
 	if (@ARGV == 0)
@@ -475,7 +479,7 @@ sub pre_proc_c_file
 
 	if ($proc_num == 3)
 	{
-		#/* æ‚É’u‚«Š·‚¦‚½ƒŠƒeƒ‰ƒ‹‚ğ#define’è‹`‚·‚é */
+		#/* å…ˆã«ç½®ãæ›ãˆãŸãƒªãƒ†ãƒ©ãƒ«ã‚’#defineå®šç¾©ã™ã‚‹ */
 		for ($index = 0; $index < @literals; $index++)
 		{
 			&output_line("#define __C_ANALYZE_LITERALS_$index" . " " . $literals[$index] . "\n");
@@ -511,7 +515,7 @@ sub post_proc_c_file
 }
 
 
-#/* ‰ğÍ‘O‚ÉCƒR[ƒh‚ğ¬Œ`‚·‚é */
+#/* è§£æå‰ã«Cã‚³ãƒ¼ãƒ‰ã‚’æˆå½¢ã™ã‚‹ */
 sub prepare_c_file
 {
 	my $source_file  = $_[0];
@@ -545,7 +549,7 @@ sub prepare_c_file
 
 
 
-#/* ‚Pƒ‚ƒWƒ…[ƒ‹‰ğÍ */
+#/* ï¼‘ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«è§£æ */
 sub analyze_source
 {
 	my $out_file     = "";
@@ -555,13 +559,13 @@ sub analyze_source
 	&read_setting_file();
 	@output_lines = ();
 
-	#/* CƒR[ƒh‚Ì–‘O®— */
+	#/* Cã‚³ãƒ¼ãƒ‰ã®äº‹å‰æ•´ç† */
 	&prepare_c_file($source_file);
 
 	$out_file = $output_fld . "/" . basename($source_file) . "_analyzed.csv";
 	open(OUT_FILE_OUT,">$out_file")   || die "Can't create analyzed file.\n";
 
-	#/* CŒ¾Œê‰ğÍ */
+	#/* Cè¨€èªè§£æ */
 	print "-----------------\n";
 	print "Analyzing module \n";
 	print "-----------------\n";
@@ -595,7 +599,7 @@ sub analyze_source
 
 
 #/****************************/
-#/* ƒTƒuƒfƒBƒŒƒNƒgƒŠ‚Ì¶¬   */
+#/* ã‚µãƒ–ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã®ç”Ÿæˆ   */
 #/****************************/
 sub make_directory
 {
@@ -603,16 +607,16 @@ sub make_directory
 
 #   print "make dir : $dirname\n";
 
-    #/* Šù‚ÉƒfƒBƒŒƒNƒgƒŠ‚ª‘¶İ‚µ‚Ä‚¢‚é‚©H */
+    #/* æ—¢ã«ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªãŒå­˜åœ¨ã—ã¦ã„ã‚‹ã‹ï¼Ÿ */
     if (! -d $dirname ){
 
-        #/* umkpathv‚ª¸”s‚µ‚½ê‡A—áŠO‚ª”­¶‚·‚é‚Ì‚Åuevalv‚ÅˆÍ‚Ş */
+        #/* ã€Œmkpathã€ãŒå¤±æ•—ã—ãŸå ´åˆã€ä¾‹å¤–ãŒç™ºç”Ÿã™ã‚‹ã®ã§ã€Œevalã€ã§å›²ã‚€ */
         eval{
-            #/* ƒfƒBƒŒƒNƒgƒŠ‚Ìì¬(File::Path) */
+            #/* ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã®ä½œæˆ(File::Path) */
             mkpath($dirname);
         };
 
-        #/* umkpathv‚Ì—áŠO‚Ì“à—e‚Íu$@v‚ÉƒZƒbƒg‚³‚ê‚é */
+        #/* ã€Œmkpathã€ã®ä¾‹å¤–ã®å†…å®¹ã¯ã€Œ$@ã€ã«ã‚»ãƒƒãƒˆã•ã‚Œã‚‹ */
         if( $@ ){
             die "$dirname creace err -> $@\n";
         }
@@ -621,7 +625,7 @@ sub make_directory
 
 
 
-#/* ƒGƒXƒP[ƒv•¶š‚ğl—¶‚µ‚Â‚ÂAƒNƒH[ƒe[ƒVƒ‡ƒ“‚ÌƒNƒ[ƒYˆÊ’u‚ğ’T‚· */
+#/* ã‚¨ã‚¹ã‚±ãƒ¼ãƒ—æ–‡å­—ã‚’è€ƒæ…®ã—ã¤ã¤ã€ã‚¯ã‚©ãƒ¼ãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ã®ã‚¯ãƒ­ãƒ¼ã‚ºä½ç½®ã‚’æ¢ã™ */
 sub find_quatation
 {
 	my $quatation = $_[0];
@@ -646,7 +650,7 @@ sub find_quatation
 	return -1;
 }
 
-#/* ƒRƒƒ“ƒg‚Ì•ª—£ˆ— */
+#/* ã‚³ãƒ¡ãƒ³ãƒˆã®åˆ†é›¢å‡¦ç† */
 sub comment_parse
 {
 #	print "enter : $_[0]line_postpone : $line_postpone\n";
@@ -656,10 +660,10 @@ sub comment_parse
 
 	if ($is_single_comment == 1)
 	{
-		#/* 1sƒRƒƒ“ƒg‚ÌŒp‘± */
-		if ($local_line =~/\\\s*\n/)         #/* '\'‚ÅI‚í‚Á‚Ä‚¢‚é */
+		#/* 1è¡Œã‚³ãƒ¡ãƒ³ãƒˆã®ç¶™ç¶š */
+		if ($local_line =~/\\\s*\n/)         #/* '\'ã§çµ‚ã‚ã£ã¦ã„ã‚‹ */
 		{
-			#/* ‚³‚ç‚ÉŒp‘±‚Ìê‡ */
+			#/* ã•ã‚‰ã«ç¶™ç¶šã®å ´åˆ */
 			$local_line =~ s/(.*)\\\s*\n/$1/g;
 			$local_line =~ s/\/\*/\/ \*/g;
 			$local_line =~ s/\*\//\* \//g;
@@ -669,7 +673,7 @@ sub comment_parse
 		}
 		else
 		{
-			#/* ‚±‚Ìs‚ÅŠ®Œ‹B// ƒRƒƒ“ƒg‚ÌŒã‚ë‚ÉA"/*" ‚© "*/"‚Ì‹LÚ‚ª‚ ‚ê‚ÎA–³—‚â‚èƒXƒy[ƒX‚ğ‘}“ü‚·‚é */
+			#/* ã“ã®è¡Œã§å®Œçµã€‚// ã‚³ãƒ¡ãƒ³ãƒˆã®å¾Œã‚ã«ã€"/*" ã‹ "*/"ã®è¨˜è¼‰ãŒã‚ã‚Œã°ã€ç„¡ç†ã‚„ã‚Šã‚¹ãƒšãƒ¼ã‚¹ã‚’æŒ¿å…¥ã™ã‚‹ */
 			$local_line =~ s/\n//g;
 			$local_line =~ s/\/\*/\/ \*/g;
 			$local_line =~ s/\*\//\* \//g;
@@ -679,7 +683,7 @@ sub comment_parse
 	}
 	elsif ($is_comment == 1)
 	{
-		#/* ƒRƒƒ“ƒgs‚ÌŒp‘± */
+		#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã®ç¶™ç¶š */
 		if ($local_line =~/(\*\/)/)
 		{
 			my $line_rear = $';
@@ -699,7 +703,7 @@ sub comment_parse
 	}
 	elsif ($local_line =~/(\/\/|\/\*|\"|\')/)
 	{
-		#/* ƒRƒƒ“ƒg‚Ü‚½‚ÍƒŠƒeƒ‰ƒ‹‚Ìn‚Ü‚è */
+		#/* ã‚³ãƒ¡ãƒ³ãƒˆã¾ãŸã¯ãƒªãƒ†ãƒ©ãƒ«ã®å§‹ã¾ã‚Š */
 
 		my $line_front = $`;
 		my $line_rear = $';
@@ -743,7 +747,7 @@ sub comment_parse
 
 			if ($length > 0)
 			{
-				#/* “¯‚¶s‚Å•Â‚¶‚Ä‚¢‚éê‡‚ÍA’u‚«Š·‚¦‚ÄÄ‹Aˆ—‚·‚é */
+				#/* åŒã˜è¡Œã§é–‰ã˜ã¦ã„ã‚‹å ´åˆã¯ã€ç½®ãæ›ãˆã¦å†å¸°å‡¦ç†ã™ã‚‹ */
 				my $local_literal = substr($local_line, $index, $length + 2);
 				my $literal_num = @literals;
 				push @literals, $local_literal;
@@ -752,7 +756,7 @@ sub comment_parse
 			}
 			elsif ($line_rear =~/\\\s*\n/)
 			{
-				#/* ƒoƒbƒNƒXƒ‰ƒbƒVƒ…‚ÅŸs‚É‚¿‰z‚µ‚Ä‚¢‚éê‡‚ÍAˆ—•Û—¯ */
+				#/* ãƒãƒƒã‚¯ã‚¹ãƒ©ãƒƒã‚·ãƒ¥ã§æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦ã„ã‚‹å ´åˆã¯ã€å‡¦ç†ä¿ç•™ */
 				$local_line =~ s/\\\s*\n//;
 				$line_postpone = $local_line;
 				print "line_postpone : $line_postpone\n";
@@ -769,7 +773,7 @@ sub comment_parse
 
 			if ($length == 0)
 			{
-				#/* ‹ó•¶""‚¾‚Á‚½ê‡‚ÍA’u‚«Š·‚¦‚ÄÄ‹Aˆ—‚·‚é */
+				#/* ç©ºæ–‡""ã ã£ãŸå ´åˆã¯ã€ç½®ãæ›ãˆã¦å†å¸°å‡¦ç†ã™ã‚‹ */
 				my $local_literal = "\"\"";
 				my $literal_num = @literals;
 				push @literals, $local_literal;
@@ -778,7 +782,7 @@ sub comment_parse
 			}
 			elsif ($length > 0)
 			{
-				#/* “¯‚¶s‚Å•Â‚¶‚Ä‚¢‚éê‡‚ÍA’u‚«Š·‚¦‚ÄÄ‹Aˆ—‚·‚é */
+				#/* åŒã˜è¡Œã§é–‰ã˜ã¦ã„ã‚‹å ´åˆã¯ã€ç½®ãæ›ãˆã¦å†å¸°å‡¦ç†ã™ã‚‹ */
 #				my $local_literal = "\"$`$1\"";
 				my $local_literal = substr($local_line, $index, $length + 2);
 				my $literal_num = @literals;
@@ -788,7 +792,7 @@ sub comment_parse
 			}
 			elsif ($line_rear =~/\\\s*\n/)
 			{
-				#/* ƒoƒbƒNƒXƒ‰ƒbƒVƒ…‚ÅŸs‚É‚¿‰z‚µ‚Ä‚¢‚éê‡‚ÍAˆ—•Û—¯ */
+				#/* ãƒãƒƒã‚¯ã‚¹ãƒ©ãƒƒã‚·ãƒ¥ã§æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦ã„ã‚‹å ´åˆã¯ã€å‡¦ç†ä¿ç•™ */
 				$local_line =~ s/\\\s*\n//;
 				$line_postpone = $local_line;
 				print "line_postpone : $line_postpone\n";
@@ -803,7 +807,7 @@ sub comment_parse
 #			print "C Style Comment! $local_line\n";
 			if ($' =~/(\*\/)\s*\/\*/)
 			{
-				#/* ƒRƒƒ“ƒg‚ª‘±‚¢‚Ä‚¢‚éê‡ */
+				#/* ã‚³ãƒ¡ãƒ³ãƒˆãŒç¶šã„ã¦ã„ã‚‹å ´åˆ */
 				&output_line("/* " . $` . " */\n");
 				$local_line = $line_front . "/* " . $` . " \/ " . $';
 				
@@ -844,7 +848,7 @@ sub comment_parse
 }
 
 
-#/* —LŒø‚Èdefineƒ}ƒNƒ‚©‚Ç‚¤‚© */
+#/* æœ‰åŠ¹ãªdefineãƒã‚¯ãƒ­ã‹ã©ã†ã‹ */
 sub is_valid_macro
 {
 	my $define;
@@ -870,7 +874,7 @@ sub pop_comment
 
 	if ($current_brief ne "")
 	{
-		#/* @briefƒRƒƒ“ƒg‚ª‚ ‚éê‡‚ÍA‚»‚¿‚ç‚ğ—Dæ(æ“ª‚Ì‹ó”’‚Íæ‚Á•¥‚¤) */
+		#/* @briefã‚³ãƒ¡ãƒ³ãƒˆãŒã‚ã‚‹å ´åˆã¯ã€ãã¡ã‚‰ã‚’å„ªå…ˆ(å…ˆé ­ã®ç©ºç™½ã¯å–ã£æ‰•ã†) */
 		$current_brief =~ s/^\s*//;
 		$ret_text = $current_brief;
 		$current_brief = "";
@@ -879,7 +883,7 @@ sub pop_comment
 	}
 	else
 	{
-		#/* @briefƒRƒƒ“ƒg‚ª‚È‚¢ê‡‚ÍA’¼‹ß‚à‚µ‚­‚Í“¯ˆêsŒã•û‚ÌƒRƒƒ“ƒg‚ğÌ—p(æ“ª‚Ì‹ó”’‚Íæ‚Á•¥‚¤) */
+		#/* @briefã‚³ãƒ¡ãƒ³ãƒˆãŒãªã„å ´åˆã¯ã€ç›´è¿‘ã‚‚ã—ãã¯åŒä¸€è¡Œå¾Œæ–¹ã®ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ¡ç”¨(å…ˆé ­ã®ç©ºç™½ã¯å–ã£æ‰•ã†) */
 		$first_comment =~ s/^\s*//;
 		$current_comment =~ s/^\s*//;
 		if ($prioritize_fisrt == 1)
@@ -896,7 +900,7 @@ sub pop_comment
 
 	if ($clear_hard_tab)
 	{
-		$ret_text =~ s/\t/ /g;								#/* ƒn[ƒhƒ^ƒu”rœ */
+		$ret_text =~ s/\t/ /g;								#/* ãƒãƒ¼ãƒ‰ã‚¿ãƒ–æ’é™¤ */
 		if ($ret_text eq "")
 		{
 			$ret_text = " ";
@@ -906,8 +910,23 @@ sub pop_comment
 	return $ret_text;
 }
 
+sub pop_comment_for_pu
+{
+	my $tmp_text = &pop_comment(0, 1);
+	
+	$tmp_text =~ s/\(/ï¼ˆ/g;
+	$tmp_text =~ s/\)/ï¼‰/g;
 
-#/* ŠY“–s‚ªƒRƒƒ“ƒg‚©‚Ç‚¤‚© */
+	$tmp_text =~ s/]\s*$/ï¼½/g;   #/* ã†ã¾ãã‚¨ã‚¹ã‚±ãƒ¼ãƒ—ã§ããšã€è‹¦è‚‰ã®ç­– */
+	$tmp_text =~ s/;\s*$//g;     #/* æœ«å°¾ã®ã‚»ãƒŸã‚³ãƒ­ãƒ³ã¯é™¤å» */
+	$tmp_text =~ s/\{/ï½›/g;      
+	$tmp_text =~ s/\}/ï½/g;      
+
+	return $tmp_text;
+}
+
+
+#/* è©²å½“è¡ŒãŒã‚³ãƒ¡ãƒ³ãƒˆã‹ã©ã†ã‹ */
 sub is_comment_line
 {
 	my $local_line = $_[0];
@@ -923,7 +942,7 @@ sub is_comment_line
 		$temp_comment = $1;
 		if ($temp_comment =~ /[^\s\*\-\_\=\@\~\!]/)
 		{
-			#/* ƒXƒy[ƒX‚Æ‹L†‚¾‚¯‚ÌƒRƒƒ“ƒgs‚Í–³‹‚·‚é */
+			#/* ã‚¹ãƒšãƒ¼ã‚¹ã¨è¨˜å·ã ã‘ã®ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ç„¡è¦–ã™ã‚‹ */
 			if ($current_comment eq "")
 			{
 				$first_comment = $temp_comment;
@@ -937,16 +956,16 @@ sub is_comment_line
 #			print "find \@brief1 $1\n";
 			$current_brief = $1;
 		}
-		elsif ($local_line =~ /^\/\* \*\s([^\*].*)\*\/\n/)
-		{
-			#/** ‚±‚ÌŒ`®‚àbriefˆµ‚¢‚É‚µ‚Ä‚İ‚é */
-#			print "find \@brief2 $1\n";
-			$current_brief = $1;
-		}
 		elsif ($local_line =~ /^\/\* [\!\*]\<(.*)\*\/\n/)
 		{
-			#/*!< ‚±‚ÌŒ`®‚àbriefˆµ‚¢‚É‚µ‚Ä‚İ‚é */
+			#/*!< ã“ã®å½¢å¼ã‚‚briefæ‰±ã„ã«ã—ã¦ã¿ã‚‹ */
 #			print "find \@brief3 $1\n";
+			$current_brief = $1;
+		}
+		elsif ($local_line =~ /^\/\* \*\s([^\*].*)\*\/\n/)
+		{
+			#/** ã“ã®å½¢å¼ã‚‚briefæ‰±ã„ã«ã—ã¦ã¿ã‚‹ */
+#			print "find \@brief2 $1\n";
 			$current_brief = $1;
 		}
 
@@ -973,25 +992,25 @@ sub check_bracket_close
 		$close_idx = index($text, $close, $position);
 		if ( ($open_idx < 0) && ($close_idx < 0) )
 		{
-			#/* Š‡ŒÊ‚ª‚È‚­‚È‚ê‚ÎOK */
+			#/* æ‹¬å¼§ãŒãªããªã‚Œã°OK */
 			return ($count == 0);
 		}
 		else
 		{
 			if ($open_idx < 0)
 			{
-				#/* Close‚¾‚¯‚ªc‚Á‚Ä‚¢‚éê‡ */
+				#/* Closeã ã‘ãŒæ®‹ã£ã¦ã„ã‚‹å ´åˆ */
 				$count--;
 				$position = $close_idx + 1;
 			}
 			elsif ($close_idx < 0)
 			{
-				#/* Open‚¾‚¯‚ªc‚Á‚Ä‚¢‚éê‡BŒp‘±‚·‚é‚Ü‚Å‚à‚È‚­AƒNƒ[ƒY‚µ‚Ä‚¢‚È‚¢ */
+				#/* Openã ã‘ãŒæ®‹ã£ã¦ã„ã‚‹å ´åˆã€‚ç¶™ç¶šã™ã‚‹ã¾ã§ã‚‚ãªãã€ã‚¯ãƒ­ãƒ¼ã‚ºã—ã¦ã„ãªã„ */
 				return 0;
 			}
 			else
 			{
-				#/* Open, Close—¼•û‚ªc‚Á‚Ä‚¢‚éê‡ */
+				#/* Open, Closeä¸¡æ–¹ãŒæ®‹ã£ã¦ã„ã‚‹å ´åˆ */
 				if ($open_idx < $close_idx)
 				{
 					$count++;
@@ -1004,19 +1023,19 @@ sub check_bracket_close
 				}
 			}
 
-			#/* “r’†‚ÅƒJƒEƒ“ƒg‚ªƒ}ƒCƒiƒX‚É‚È‚Á‚½‚ç‚¨‚©‚µ‚¢I */
+			#/* é€”ä¸­ã§ã‚«ã‚¦ãƒ³ãƒˆãŒãƒã‚¤ãƒŠã‚¹ã«ãªã£ãŸã‚‰ãŠã‹ã—ã„ï¼ */
 			($count >= 0) or die "strange bracket count!\n";
 		}
 	}
 }
 
-#/* \‚É‚æ‚és˜AŒ‹‚ğ‰ğœ */
+#/* \ã«ã‚ˆã‚‹è¡Œé€£çµã‚’è§£é™¤ */
 sub line_backslash_parse
 {
 	my $local_line = $_[0];
 	my $index;
 
-	#/* ƒRƒƒ“ƒgs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if (&is_comment_line($local_line))
 	{
 		&output_line($local_line);
@@ -1027,7 +1046,7 @@ sub line_backslash_parse
 	$local_line = $line_postpone . $_[0];
 	$line_postpone = "";
 
-	#/* \‚ÅI‚í‚Á‚Ä‚¢‚és‚Í‚¿‰z‚· */
+	#/* \ã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯æŒã¡è¶Šã™ */
 	if ($local_line =~ /\\\s*\n/)
 	{
 		$line_postpone = $`;
@@ -1036,13 +1055,13 @@ sub line_backslash_parse
 	{
 		if ($local_line =~ /^\s*\#/)
 		{
-			#/* ƒfƒBƒŒƒNƒeƒBƒu‚ÍœŠO */
+			#/* ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ã¯é™¤å¤– */
 		}
 		else
 		{
 			if ($local_line =~ /([\;\:\{\}])\s*\n/)
 			{
-				#/* ; ‚© : ‚© { ‚© } ‚ÅI‚í‚Á‚Ä‚¢‚és‚ÍA––”ö‚ÌƒXƒy[ƒX‚ğœ‹ */
+				#/* ; ã‹ : ã‹ { ã‹ } ã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯ã€æœ«å°¾ã®ã‚¹ãƒšãƒ¼ã‚¹ã‚’é™¤å» */
 #				print "not joint $local_line\n";
 				$local_line =~ s/([\;\:\{\}])\s*\n/$1\n/
 			}
@@ -1051,14 +1070,14 @@ sub line_backslash_parse
 
 	if ($line_postpone eq "")
 	{
-		#/* s“ª‚Ìˆ—‚ª‚ß‚ñ‚Ç‚¤‚È‚Ì‚ÅA‚Æ‚è‚ ‚¦‚¸”¼ŠpƒXƒy[ƒX‚ğ‚Â‚¯‚Ä‚µ‚Ü‚¤ */
+		#/* è¡Œé ­ã®å‡¦ç†ãŒã‚ã‚“ã©ã†ãªã®ã§ã€ã¨ã‚Šã‚ãˆãšåŠè§’ã‚¹ãƒšãƒ¼ã‚¹ã‚’ã¤ã‘ã¦ã—ã¾ã† */
 		$local_line = " " . $local_line;
 		&output_line($local_line);
 	}
 }
 
 
-#/* ’u‚«Š·‚¦‚½ƒŠƒeƒ‰ƒ‹‚ğ•œŒ³‚·‚é */
+#/* ç½®ãæ›ãˆãŸãƒªãƒ†ãƒ©ãƒ«ã‚’å¾©å…ƒã™ã‚‹ */
 sub restore_literal
 {
 	my $text  = $_[0];
@@ -1073,7 +1092,7 @@ sub restore_literal
 }
 
 
-#/* (), {}, []‚È‚Ç‚ÌƒlƒXƒg‚ğl—¶‚µ‚Ä“à•”‚ğ’Šo‚·‚é */
+#/* (), {}, []ãªã©ã®ãƒã‚¹ãƒˆã‚’è€ƒæ…®ã—ã¦å†…éƒ¨ã‚’æŠ½å‡ºã™ã‚‹ */
 sub extract_bracket_text
 {
 	my $text  = $_[0];
@@ -1126,11 +1145,11 @@ sub check_extracts
 }
 
 
-#/* defineƒ}ƒNƒ‚Ì’u‚«Š·‚¦À{ */
+#/* defineãƒã‚¯ãƒ­ã®ç½®ãæ›ãˆå®Ÿæ–½ */
 sub replace_macro
 {
 	my $text          = $_[0];
-	my $only_extracts = $_[1];       #/* w’è‚³‚ê‚½ƒ}ƒNƒ‚Ì‚İ‚ğ“WŠJ‚·‚é‚©‚Ç‚¤‚© */
+	my $only_extracts = $_[1];       #/* æŒ‡å®šã•ã‚ŒãŸãƒã‚¯ãƒ­ã®ã¿ã‚’å±•é–‹ã™ã‚‹ã‹ã©ã†ã‹ */
 	my $define;
 	my $value;
 	my $index;
@@ -1149,7 +1168,7 @@ sub replace_macro
 		{
 			if (check_extracts($define) == 0)
 			{
-				#/* “WŠJ‘ÎÛ‚Éw’è‚³‚ê‚Ä‚¢‚È‚¯‚ê‚ÎAƒXƒLƒbƒv‚·‚é */
+				#/* å±•é–‹å¯¾è±¡ã«æŒ‡å®šã•ã‚Œã¦ã„ãªã‘ã‚Œã°ã€ã‚¹ã‚­ãƒƒãƒ—ã™ã‚‹ */
 				next;
 			}
 			
@@ -1167,13 +1186,13 @@ sub replace_macro
 			{
 				my $replace = $1;
 
-				#/* ‚Ü‚¸ˆø”‚ÌƒeƒLƒXƒg‚ğ’Šo‚·‚é */
+				#/* ã¾ãšå¼•æ•°ã®ãƒ†ã‚­ã‚¹ãƒˆã‚’æŠ½å‡ºã™ã‚‹ */
 				$parameter = &extract_bracket_text($', "\(", "\)");
 #				print "MACRO FUNC CALL! $define($parameter)\n";
 				$replace = $replace . $parameter . ")";
 #				print "MACRO FUNC CALL! $replace\n";
 
-				#/* ‘±‚¢‚Äˆø”‚ğ‚Î‚ç‚µ‚Ä”z—ñ‚ÉŠi”[ */
+				#/* ç¶šã„ã¦å¼•æ•°ã‚’ã°ã‚‰ã—ã¦é…åˆ—ã«æ ¼ç´ */
 				@parameters = &analyze_parameter_list($parameter);
 
 #				print "value before @parameters : $value\n";
@@ -1185,7 +1204,7 @@ sub replace_macro
 				}
 #				print "value after @parameters : $value\n";
 
-				#/* ƒ}ƒNƒ‘S‘Ì‚ğ’u‚«Š·‚¦ */
+				#/* ãƒã‚¯ãƒ­å…¨ä½“ã‚’ç½®ãæ›ãˆ */
 #				print "macro is $define\($parameter\)\n";
 #				print "value is $value\n";
 #				print "text before $text\n";
@@ -1228,7 +1247,7 @@ sub replace_macro
 }
 
 
-#/* ,‚Å‹æØ‚ç‚ê‚½ˆø”ƒŠƒXƒg‚ğ¯•Ê‚µ‚Ä”z—ñ‚Å•Ô‚· */
+#/* ,ã§åŒºåˆ‡ã‚‰ã‚ŒãŸå¼•æ•°ãƒªã‚¹ãƒˆã‚’è­˜åˆ¥ã—ã¦é…åˆ—ã§è¿”ã™ */
 sub analyze_parameter_list
 {
 	my $text  = $_[0];
@@ -1252,7 +1271,7 @@ sub analyze_parameter_list
 }
 
 
-#/* ƒ}ƒNƒ‰¼ˆø”‚Ì‰ğÍ */
+#/* ãƒã‚¯ãƒ­ä»®å¼•æ•°ã®è§£æ */
 sub analyze_macro_arg_list
 {
 	my $text  = $_[0];
@@ -1277,7 +1296,7 @@ sub analyze_macro_arg_list
 }
 
 
-#/* ƒ}ƒNƒ’è‹`‚Ì’Ç‰Áˆ— */
+#/* ãƒã‚¯ãƒ­å®šç¾©ã®è¿½åŠ å‡¦ç† */
 sub new_macro
 {
 	my $is_ex = $_[0];
@@ -1303,7 +1322,7 @@ sub new_macro
 
 #	print "new_macro! $name\n";
 
-	#/* ƒRƒƒ“ƒg‚ğE‚¤ */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã† */
 	$local_macro->summary(&pop_comment(0, 1));
 
 	if ($args eq "")
@@ -1319,9 +1338,9 @@ sub new_macro
 #		printf("macro args : @{$local_macro->args}\n");
 	}
 
-	push @macros_org, $local_macro;   #/* ’è‹`‡‚Åƒ}ƒNƒ‚ğ“o˜^ */
+	push @macros_org, $local_macro;   #/* å®šç¾©é †ã§ãƒã‚¯ãƒ­ã‚’ç™»éŒ² */
 
-	#/* “WŠJ—p‚É‚Í•¶š—ñ‚ª’·‚¢‡‚Åƒ}ƒNƒ‚ğ“o˜^ */
+	#/* å±•é–‹ç”¨ã«ã¯æ–‡å­—åˆ—ãŒé•·ã„é †ã§ãƒã‚¯ãƒ­ã‚’ç™»éŒ² */
 	if (@macros == 0)
 	{
 		push @macros, $local_macro;
@@ -1332,19 +1351,19 @@ sub new_macro
 		{
 			if (length($macros[$index]->name) < length($name))
 			{
-				#/* ’·‚¢‡‚Éƒ\[ƒg‚µ‚Ä”z—ñ‚É‚µ‚Ä‚¢‚­ */
+				#/* é•·ã„é †ã«ã‚½ãƒ¼ãƒˆã—ã¦é…åˆ—ã«ã—ã¦ã„ã */
 				splice(@macros,  $index, 0, $local_macro);
 				return;
 			}
 		}
 
-		#/* Å’Z‚Å‚ ‚Á‚½ê‡‚Í––”ö‚É‘«‚· */
+		#/* æœ€çŸ­ã§ã‚ã£ãŸå ´åˆã¯æœ«å°¾ã«è¶³ã™ */
 		push @macros, $local_macro;
 	}
 }
 
 
-#/* ƒfƒBƒŒƒNƒeƒBƒu‚Ìˆ— */
+#/* ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ã®å‡¦ç† */
 sub line_define_parse
 {
 	my $local_line = $_[0];
@@ -1354,7 +1373,7 @@ sub line_define_parse
 	
 	$valid_now = is_valid_now();
 
-	#/* ƒRƒƒ“ƒgs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if (&is_comment_line($local_line))
 	{
 		if ($valid_now == 1)
@@ -1364,13 +1383,13 @@ sub line_define_parse
 		return;
 	}
 
-	#/* ƒvƒŠƒvƒƒZƒbƒT‚Ìˆ— */
+	#/* ãƒ—ãƒªãƒ—ãƒ­ã‚»ãƒƒã‚µã®å‡¦ç† */
 #	print "define parse : $local_line";
 	foreach $prepro (@c_prepro_word)
 	{
 		if ($local_line =~/#\s*$prepro/)
 		{
-			#/* ‚Æ‚è‚ ‚¦‚¸æ“ª‚Æ#‚ÌŒã‚ë‚Ì—]Œv‚ÈƒXƒy[ƒX‚ğœ‹ */
+			#/* ã¨ã‚Šã‚ãˆãšå…ˆé ­ã¨#ã®å¾Œã‚ã®ä½™è¨ˆãªã‚¹ãƒšãƒ¼ã‚¹ã‚’é™¤å» */
 #			print "input  : $local_line";
 			$local_line =~ s/\s*#\s*($prepro)/#$1/;
 #			print "output : $local_line";
@@ -1390,7 +1409,7 @@ sub line_define_parse
 			}
 			elsif ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)\n/)
 			{
-				#/* ƒ}ƒNƒ‚Ì’è‹` */
+				#/* ãƒã‚¯ãƒ­ã®å®šç¾© */
 				if ($valid_now == 1)
 				{
 					my $macro_name = $1;
@@ -1403,7 +1422,7 @@ sub line_define_parse
 			}
 			elsif ($local_line =~ /\#define\s+([A-Za-z_][A-Za-z0-9_]*)\s*\n/)
 			{
-				#/* ƒ}ƒNƒ‚Ì’è‹` */
+				#/* ãƒã‚¯ãƒ­ã®å®šç¾© */
 				if ($valid_now == 1)
 				{
 #					print "#define macro only! $1\n";
@@ -1414,7 +1433,7 @@ sub line_define_parse
 			}
 			elsif ($local_line =~ /\#undef\s+([A-Za-z0-9_]*)/)
 			{
-				#/* ƒ}ƒNƒ’è‹`‚Ìíœˆ— */
+				#/* ãƒã‚¯ãƒ­å®šç¾©ã®å‰Šé™¤å‡¦ç† */
 				if ($valid_now == 1)
 				{
 					my $index;
@@ -1479,19 +1498,19 @@ sub line_define_parse
 
 				if ($result =~ /[^\+\-0-9]/)
 				{
-					#/* ”’lˆÈŠO‚ğŠÜ‚Ş */
+					#/* æ•°å€¤ä»¥å¤–ã‚’å«ã‚€ */
 #					print "not numeric! [$result]\n";
 					push_valid_nest(0);
 				}
 				elsif ($result eq "")
 				{
-					#/* ifğŒ‚ª‚©‚ç‚Á‚Û */
+					#/* ifæ¡ä»¶ãŒã‹ã‚‰ã£ã½ */
 ##					print "empty condition!\n";
 					push_valid_nest(0);
 				}
 				else
 				{
-					#/* ”’l‚Ì‚İ */
+					#/* æ•°å€¤ã®ã¿ */
 #					print "numeric! $result\n";
 					if ($result == 0)
 					{
@@ -1519,13 +1538,13 @@ sub line_define_parse
 
 					if ($result =~ /[^\+\-0-9]/)
 					{
-						#/* ”’lˆÈŠO‚ğŠÜ‚Ş */
+						#/* æ•°å€¤ä»¥å¤–ã‚’å«ã‚€ */
 #						print "not numeric! [$result]\n";
 						push_valid_nest(0);
 					}
 					else
 					{
-						#/* ”’l‚Ì‚İ */
+						#/* æ•°å€¤ã®ã¿ */
 #						print "numeric! $result\n";
 						if ($result == 0)
 						{
@@ -1584,7 +1603,7 @@ sub line_define_parse
 		}
 		else
 		{
-			#/* ()‚ª•Â‚¶‚Ä‚¢‚È‚¢s‚Í˜AŒ‹‚·‚é */
+			#/* ()ãŒé–‰ã˜ã¦ã„ãªã„è¡Œã¯é€£çµã™ã‚‹ */
 			$local_line =~ s/\n//;
 			$line_postpone = $local_line;
 		}
@@ -1597,17 +1616,17 @@ sub line_indent_parse
 	my $local_line = $_[0];
 	my $prepro;
 
-	#/* æ“ª‚Ì‹ó”’‚ğœ‹‚·‚é */
+	#/* å…ˆé ­ã®ç©ºç™½ã‚’é™¤å»ã™ã‚‹ */
 	$local_line =~ s/^[ \t]+//;
 
-	#/* ƒRƒƒ“ƒgs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if (&is_comment_line($local_line))
 	{
 		&output_line($local_line);
 		return;
 	}
 
-	#/* ƒvƒŠƒvƒƒZƒbƒT‚Ìs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ãƒ—ãƒªãƒ—ãƒ­ã‚»ãƒƒã‚µã®è¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	foreach $prepro (@c_prepro_word)
 	{
 		if ($local_line =~/#\s*$prepro/)
@@ -1618,7 +1637,7 @@ sub line_indent_parse
 		}
 	}
 
-	$local_line =~ s/[ \t]+/ /g;                   #/* ƒXƒy[ƒX‚ÆTAB‚ğˆê‚Â‚ÌƒXƒy[ƒX‚É•ÏŠ· */
+	$local_line =~ s/[ \t]+/ /g;                   #/* ã‚¹ãƒšãƒ¼ã‚¹ã¨TABã‚’ä¸€ã¤ã®ã‚¹ãƒšãƒ¼ã‚¹ã«å¤‰æ› */
 
 	if ($local_line =~ /}/)
 	{
@@ -1626,7 +1645,7 @@ sub line_indent_parse
 #		print "indend dec!!!!!!!!!!!!($indent_level) $local_line\n";
 	}
 
-	#/* ƒCƒ“ƒfƒ“ƒg•t‰Á */
+	#/* ã‚¤ãƒ³ãƒ‡ãƒ³ãƒˆä»˜åŠ  */
 #	print "before : $local_line\n";
 	$local_line = ("    " x $indent_level) . $local_line;
 #	print "after  : $local_line\n";
@@ -1664,7 +1683,7 @@ sub line_parse_1st
 	my $local_line = $_[0];
 	my $index;
 
-	#/* ƒRƒƒ“ƒgs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if (&is_comment_line($local_line))
 	{
 		&output_line($local_line);
@@ -1673,10 +1692,10 @@ sub line_parse_1st
 
 	if ($local_line =~ /^\s*\#/)
 	{
-		#/* ƒfƒBƒŒƒNƒeƒBƒu‚ÍœŠO */
+		#/* ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ã¯é™¤å¤– */
 		if ($line_postpone ne "")
 		{
-			#/* ‚¿‰z‚µ‚È‚ª‚çƒfƒBƒŒƒNƒeƒBƒu‚ªn‚Ü‚éê‡‚ÍAƒ}ƒNƒ‚È‚Ç“Áê‚È‹Lq‚É‚È‚Á‚Ä‚¢‚é‚Ì‚ÅA‰üs‚µ‚Ä‹æØ‚é */
+			#/* æŒã¡è¶Šã—ãªãŒã‚‰ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ãŒå§‹ã¾ã‚‹å ´åˆã¯ã€ãƒã‚¯ãƒ­ãªã©ç‰¹æ®Šãªè¨˜è¿°ã«ãªã£ã¦ã„ã‚‹ã®ã§ã€æ”¹è¡Œã—ã¦åŒºåˆ‡ã‚‹ */
 			&output_line($line_postpone . "\n");
 			$line_postpone = "";
 		}
@@ -1688,32 +1707,32 @@ sub line_parse_1st
 
 		if ($local_line =~ /([^\;\{\}])\s*\n/)
 		{
-			#/* ; ‚© { ‚© } ‚ÅI‚í‚Á‚Ä‚È‚¢s‚ÍAƒXƒy[ƒX1ŒÂ‹ó‚¯‚Ä˜AŒ‹‚·‚é */
+			#/* ; ã‹ { ã‹ } ã§çµ‚ã‚ã£ã¦ãªã„è¡Œã¯ã€ã‚¹ãƒšãƒ¼ã‚¹1å€‹ç©ºã‘ã¦é€£çµã™ã‚‹ */
 #			print "joint $local_line\n";
 #			$line_postpone = "$`$1 ";
 		}
 
 		if ($local_line =~ /(else)\s*\n/)
 		{
-			#/* else‚ÅI‚í‚Á‚Ä‚¢‚és‚ÍAƒXƒy[ƒX1ŒÂ‹ó‚¯‚Ä˜AŒ‹‚·‚é */
+			#/* elseã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯ã€ã‚¹ãƒšãƒ¼ã‚¹1å€‹ç©ºã‘ã¦é€£çµã™ã‚‹ */
 			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
 		elsif ($local_line =~ /(\?)\s*\n/)
 		{
-			#/* ?‚ÅI‚í‚Á‚Ä‚¢‚és‚ÍAƒXƒy[ƒX1ŒÂ‹ó‚¯‚Ä˜AŒ‹‚·‚é */
+			#/* ?ã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯ã€ã‚¹ãƒšãƒ¼ã‚¹1å€‹ç©ºã‘ã¦é€£çµã™ã‚‹ */
 			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
 		elsif ($local_line =~ /(\?[^:]*)\n/)
 		{
-			#/* ?‚ÅI‚í‚Á‚Ä‚¢‚és‚ÍAƒXƒy[ƒX1ŒÂ‹ó‚¯‚Ä˜AŒ‹‚·‚é */
+			#/* ?ã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯ã€ã‚¹ãƒšãƒ¼ã‚¹1å€‹ç©ºã‘ã¦é€£çµã™ã‚‹ */
 			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
 		elsif ($local_line =~ /(\?.+\:\s*)\n/)
 		{
-			#/* ?‚ÅI‚í‚Á‚Ä‚¢‚és‚ÍAƒXƒy[ƒX1ŒÂ‹ó‚¯‚Ä˜AŒ‹‚·‚é */
+			#/* ?ã§çµ‚ã‚ã£ã¦ã„ã‚‹è¡Œã¯ã€ã‚¹ãƒšãƒ¼ã‚¹1å€‹ç©ºã‘ã¦é€£çµã™ã‚‹ */
 			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
@@ -1733,7 +1752,7 @@ sub line_parse_2nd
 	my $index_question = 0;
 	my $index_colon    = 0;
 
-	#/* ƒRƒƒ“ƒgs‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if (&is_comment_line($local_line))
 	{
 		&output_line($local_line);
@@ -1742,7 +1761,7 @@ sub line_parse_2nd
 		return;
 	}
 
-	#/* ƒfƒBƒŒƒNƒeƒBƒus‚Í‚»‚Ì‚Ü‚Üo—Í */
+	#/* ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–è¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 	if ($local_line =~ /^#define|^#include|^#pragma/)
 	{
 		&output_line($local_line);
@@ -1754,49 +1773,49 @@ sub line_parse_2nd
 		$current_comment = "";
 		if ($local_line =~ /^\s*\n/)
 		{
-			#/* ƒRƒƒ“ƒgs‚Ì’¼Œã‚Ì‰üs‚Í‰·‘¶‚·‚é */
+			#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã®ç›´å¾Œã®æ”¹è¡Œã¯æ¸©å­˜ã™ã‚‹ */
 			&output_line("\n");
 		}
 	}
 
-	$local_line =~ s/^\s*\n/ /;                   #/* ƒXƒy[ƒX‚Æ‰üs‚¾‚¯‚Ìs‚Ííœ       */
+	$local_line =~ s/^\s*\n/ /;                   #/* ã‚¹ãƒšãƒ¼ã‚¹ã¨æ”¹è¡Œã ã‘ã®è¡Œã¯å‰Šé™¤       */
 
 	if ($local_line =~/^(\s*)\{\s*\n/)
 	{
-		#/* ƒXƒy[ƒX‚Æ{‚¾‚¯‚Ìs‚Í‚»‚Ì‚Ü‚Üo—Í */
+		#/* ã‚¹ãƒšãƒ¼ã‚¹ã¨{ã ã‘ã®è¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 		&output_line("$1\{\n ");
 		return;
 	}
 
 	if ($local_line =~/^(\s*)(})\s*\n/)
 	{
-		#/* ƒXƒy[ƒX‚Æ}‚¾‚¯‚Ìs‚Í‚»‚Ì‚Ü‚Üo—Í */
+		#/* ã‚¹ãƒšãƒ¼ã‚¹ã¨}ã ã‘ã®è¡Œã¯ãã®ã¾ã¾å‡ºåŠ› */
 		&output_line("$1$2\n ");
 		return;
 	}
 
-	#/* {‚Ì‘OŒã‚É‰üs‚ğ‹²‚Ş */
+	#/* {ã®å‰å¾Œã«æ”¹è¡Œã‚’æŒŸã‚€ */
 	$local_line =~ s/{/\n {\n /g;
 
-	#/* }‚Ì‘OŒã‚É‰üs‚ğ‹²‚Ş */
+	#/* }ã®å‰å¾Œã«æ”¹è¡Œã‚’æŒŸã‚€ */
 	$local_line =~ s/}/\n }\n /g;
 
-	#/* ;‚ÌŒã‚ë‚É‰üs‚ğ‹²‚Ş */
+	#/* ;ã®å¾Œã‚ã«æ”¹è¡Œã‚’æŒŸã‚€ */
 	$local_line =~ s/;/;\n /g;
 
-	#/* ‚Æ‚è‚ ‚¦‚¸‘S•”‚Ì:‚É‰üs‚ğ‚Â‚¯‚é */
+	#/* ã¨ã‚Šã‚ãˆãšå…¨éƒ¨ã®:ã«æ”¹è¡Œã‚’ã¤ã‘ã‚‹ */
 	$local_line =~ s/:/:\n /g;
 
-	#/* O€‰‰Zq?‚ÌŒã‚ë‚É‚ ‚é:‚Í‰üs‚ğƒLƒƒƒ“ƒZƒ‹‚·‚é */
+	#/* ä¸‰é …æ¼”ç®—å­?ã®å¾Œã‚ã«ã‚ã‚‹:ã¯æ”¹è¡Œã‚’ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã™ã‚‹ */
 	while ($local_line =~ /\?(.*):\n /)
 	{
 		$local_line =~ s/\?(.*):\n /\?$1:/g;
 	}
 
-	#/* else, doß‚ÌŒã‚ë‚Í‰üs */
+	#/* else, doç¯€ã®å¾Œã‚ã¯æ”¹è¡Œ */
 	$local_line =~ s/(\s*)(else|do)([^_A-Za-z0-9])/$1$2\n $3/g;
 
-	#/* if, while, forß‚ÌŒã‚ë‚Í()‚ª•Â‚¶‚½‚Æ‚±‚ë‚Å‰üs‚·‚é */
+	#/* if, while, forç¯€ã®å¾Œã‚ã¯()ãŒé–‰ã˜ãŸã¨ã“ã‚ã§æ”¹è¡Œã™ã‚‹ */
 	if ($local_line =~ /(\s*)(if|while|for)\s*\(/)
 	{
 		my $word = $2;
@@ -1814,13 +1833,13 @@ sub line_parse_2nd
 		$after_close  = substr($after_bracket, $index_close + 1);
 #		print "$before_close\)$after_close\n";
 
-		#/* ()‚Ì’†‚É‚ ‚éƒZƒ~ƒRƒƒ“‚É‘Î‚·‚é‰üs‚ğƒLƒƒƒ“ƒZƒ‹‚·‚é */
+		#/* ()ã®ä¸­ã«ã‚ã‚‹ã‚»ãƒŸã‚³ãƒ­ãƒ³ã«å¯¾ã™ã‚‹æ”¹è¡Œã‚’ã‚­ãƒ£ãƒ³ã‚»ãƒ«ã™ã‚‹ */
 		$before_close =~ s/\;\n/\;/g;
 
 #		print "$before_bracket$before_close\)\n $after_close\n--------------------------------------\n";
 		$local_line = "$before_bracket$before_close\)\n $after_close";
 
-		#/* else if‚Ìê‡‚Ì‰üs‚ğƒLƒƒƒ“ƒZƒ‹ */
+		#/* else ifã®å ´åˆã®æ”¹è¡Œã‚’ã‚­ãƒ£ãƒ³ã‚»ãƒ« */
 		if ($word eq "if")
 		{
 #			print "before----------------------------------------------------------------\n";
@@ -1834,7 +1853,7 @@ sub line_parse_2nd
 		}
 	}
 
-	#/* ƒXƒy[ƒX‚Æ‰üs‚¾‚¯‚Ìs‚ğ‚Ü‚Æ‚ß‚Äíœ‚·‚é */
+	#/* ã‚¹ãƒšãƒ¼ã‚¹ã¨æ”¹è¡Œã ã‘ã®è¡Œã‚’ã¾ã¨ã‚ã¦å‰Šé™¤ã™ã‚‹ */
 	my @split_lines = split(/\n/, $local_line);
 	my $split_line;
 
@@ -1842,7 +1861,7 @@ sub line_parse_2nd
 	foreach $split_line (@split_lines)
 	{
 		$split_line = $split_line . "\n";
-		$split_line =~ s/^\s*\n/ /;                   #/* ƒXƒy[ƒX‚Æ‰üs‚¾‚¯‚Ìs‚Ííœ       */
+		$split_line =~ s/^\s*\n/ /;                   #/* ã‚¹ãƒšãƒ¼ã‚¹ã¨æ”¹è¡Œã ã‘ã®è¡Œã¯å‰Šé™¤       */
 		$local_line = $local_line . $split_line;
 	}
 
@@ -1850,7 +1869,7 @@ sub line_parse_2nd
 }
 
 
-#/* l‘¥‰‰Z‚ÌŒvZ */
+#/* å››å‰‡æ¼”ç®—ã®è¨ˆç®— */
 sub calc_text
 {
 	my $text = $_[0];
@@ -1861,7 +1880,7 @@ sub calc_text
 
 #	print "calc $text\n";
 	
-	#/* defined‚Ìˆ— */
+	#/* definedã®å‡¦ç† */
 	while ($text =~ /defined[\s\(]+([_A-Za-z][_A-Za-z0-9]*)[\s\)]+/)
 	{
 		$result = is_valid_macro($1);
@@ -1877,7 +1896,7 @@ sub calc_text
 		}
 	}
 
-	#/* ‚±‚±‚Åƒ}ƒNƒ‚Ì’u‚«Š·‚¦‚ğÀ{ */
+	#/* ã“ã“ã§ãƒã‚¯ãƒ­ã®ç½®ãæ›ãˆã‚’å®Ÿæ–½ */
 	$text = replace_macro($text, 0);
 #	print "calc2 $text\n";
 
@@ -1902,18 +1921,18 @@ sub calc_text
 #		printf("$text\n");
 	}
 
-	#/* ”’l‚É•ÏŠ·‚³‚ê‚È‚©‚Á‚½ƒ}ƒNƒ‚Í‹U‚Æ‚µ‚Äˆµ‚¤ */
+	#/* æ•°å€¤ã«å¤‰æ›ã•ã‚Œãªã‹ã£ãŸãƒã‚¯ãƒ­ã¯å½ã¨ã—ã¦æ‰±ã† */
 	$text =~ s/[A-Za-z_][0-9A-Za-z_]*/0/g;
 
 
-	#/* ()‚Ìˆ— */
+	#/* ()ã®å‡¦ç† */
 	while (($index_close = index($text, "\)")) != -1)
 	{
-		#/* ()‚ª•Â‚¶‚Ä‚¢‚é‰ÓŠ‚ğæ“ª‚©‚çˆ—‚µ‚Ä‚¢‚­ */
+		#/* ()ãŒé–‰ã˜ã¦ã„ã‚‹ç®‡æ‰€ã‚’å…ˆé ­ã‹ã‚‰å‡¦ç†ã—ã¦ã„ã */
 #		print "index close = $index_close\n";
 		$index_open = 0;
 
-		#/* ()‚ªŠJ‚¢‚Ä‚¢‚é‰ÓŠ‚ğ’T‚· */
+		#/* ()ãŒé–‹ã„ã¦ã„ã‚‹ç®‡æ‰€ã‚’æ¢ã™ */
 		while (($temp = index(substr($text, $index_open), "\(")) != -1)
 		{
 			if ($temp > $index_close)
@@ -1931,7 +1950,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* !‚Ìˆ— */
+	#/* !ã®å‡¦ç† */
 	while ($text =~ /[\!]([0-9]+)/)
 	{
 		if ($1 == 0)
@@ -1947,7 +1966,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* æZ‚Ìˆ— */
+	#/* ä¹—ç®—ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\*\s*([\+\-]?[0-9]+)/)
 	{
 		$result = $1 * $2;
@@ -1955,7 +1974,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* œZ‚Ìˆ— */
+	#/* é™¤ç®—ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\/\s*([\+\-]?[0-9]+)/)
 	{
 		$result = $1 / $2;
@@ -1963,7 +1982,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* ’P€‚Ì+-‚ğˆ— */
+	#/* å˜é …ã®+-ã‚’å‡¦ç† */
 #	print "+- reduce0 : $text\n";
 	$text =~ s/\+\s+\+/ \+/g;
 #	print "+- reduce1 : $text\n";
@@ -1974,7 +1993,7 @@ sub calc_text
 	$text =~ s/\-\s+\-/ \+/g;
 #	print "+- reduce4 : $text\n";
 
-	#/* ‰ÁZ‚Ìˆ— */
+	#/* åŠ ç®—ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\+\s*([0-9]+)/)
 	{
 		$result = $1 + $2;
@@ -1982,7 +2001,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* Œ¸Z‚Ìˆ— */
+	#/* æ¸›ç®—ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\-\s*([0-9]+)/)
 	{
 		$result = $1 - $2;
@@ -1990,7 +2009,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* <”äŠr‚Ìˆ— */
+	#/* <æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*<\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 < $2)
@@ -2007,7 +2026,7 @@ sub calc_text
 	}
 
 
-	#/* >”äŠr‚Ìˆ— */
+	#/* >æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*>\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 > $2)
@@ -2023,7 +2042,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* <=”äŠr‚Ìˆ— */
+	#/* <=æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*<=\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 <= $2)
@@ -2040,7 +2059,7 @@ sub calc_text
 	}
 
 
-	#/* >=”äŠr‚Ìˆ— */
+	#/* >=æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*>=\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 >= $2)
@@ -2056,7 +2075,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* ==”äŠr‚Ìˆ— */
+	#/* ==æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*==\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 == $2)
@@ -2072,7 +2091,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* !=”äŠr‚Ìˆ— */
+	#/* !=æ¯”è¼ƒã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*!=\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 != $2)
@@ -2088,7 +2107,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* ˜_—Ï&&‚Ìˆ— */
+	#/* è«–ç†ç©&&ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\&\&\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 && $2)
@@ -2104,7 +2123,7 @@ sub calc_text
 #		print "re calc $text\n";
 	}
 
-	#/* ˜_—˜a||‚Ìˆ— */
+	#/* è«–ç†å’Œ||ã®å‡¦ç† */
 	while ($text =~ /([\+\-]?[0-9]+)\s*\|\|\s*([\+\-]?[0-9]+)/)
 	{
 		if ($1 || $2)
@@ -2126,7 +2145,7 @@ sub calc_text
 }
 
 
-#/* ifdef“™‚ÅŒ»İ‚ÌƒeƒLƒXƒg‚ª—LŒø‚©‚Ç‚¤‚© */
+#/* ifdefç­‰ã§ç¾åœ¨ã®ãƒ†ã‚­ã‚¹ãƒˆãŒæœ‰åŠ¹ã‹ã©ã†ã‹ */
 sub is_valid_now
 {
 	my $loop;
@@ -2141,7 +2160,7 @@ sub is_valid_now
 	return 1;
 }
 
-#/* ƒR[ƒh‚Ì—LŒø^–³Œø‚ÌØ‚è‘Ö‚¦ */
+#/* ã‚³ãƒ¼ãƒ‰ã®æœ‰åŠ¹ï¼ç„¡åŠ¹ã®åˆ‡ã‚Šæ›¿ãˆ */
 sub turn_valid
 {
 	if ($valid_line[$nest_level] == 1)
@@ -2179,36 +2198,36 @@ sub pop_valid_nest
 }
 
 
-#/* ƒXƒeƒbƒv”ƒJƒEƒ“ƒg */
+#/* ã‚¹ãƒ†ãƒƒãƒ—æ•°ã‚«ã‚¦ãƒ³ãƒˆ */
 sub count_steps
 {
 	$global_data->steps($global_data->steps+1);
 	if ($global_data->in_function == 1)
 	{
-		#/* ŠÖ”“à‚Ìs”‚ğƒJƒEƒ“ƒg */
+		#/* é–¢æ•°å†…ã®è¡Œæ•°ã‚’ã‚«ã‚¦ãƒ³ãƒˆ */
 		$current_function->steps($current_function->steps + 1);
 		$current_path->steps($current_path->steps + 1);
 	}
 }
 
-#/* s”ƒJƒEƒ“ƒg */
+#/* è¡Œæ•°ã‚«ã‚¦ãƒ³ãƒˆ */
 sub count_lines
 {
 	$global_data->lines($global_data->lines+1);
 	if ($global_data->in_function == 1)
 	{
-		#/* ŠÖ”“à‚Ìs”‚ğƒJƒEƒ“ƒg */
+		#/* é–¢æ•°å†…ã®è¡Œæ•°ã‚’ã‚«ã‚¦ãƒ³ãƒˆ */
 		$current_function->lines($current_function->lines + 1);
 		$current_path->lines($current_path->lines + 1);
 	}
 }
 
-#/* Cƒ‚ƒWƒ…[ƒ‹‰ğÍˆ— */
+#/* Cãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«è§£æå‡¦ç† */
 sub analyze_module
 {
 	my $local_line = $_[0];
 
-	#/* ‹ós */
+	#/* ç©ºè¡Œ */
 	if ($local_line eq "\n")
 	{
 		$first_comment    = "";
@@ -2216,14 +2235,14 @@ sub analyze_module
 		$current_comments = "";
 	}
 
-	#/* ƒRƒƒ“ƒgs */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆè¡Œ */
 	if (&is_comment_line($local_line))
 	{
 		$global_data->comment($global_data->comment+1);
 
 		if ($global_data->in_function == 1)
 		{
-			#/* ŠÖ”“à‚ÌƒRƒƒ“ƒgs”‚ğƒJƒEƒ“ƒg */
+			#/* é–¢æ•°å†…ã®ã‚³ãƒ¡ãƒ³ãƒˆè¡Œæ•°ã‚’ã‚«ã‚¦ãƒ³ãƒˆ */
 			$current_function->comment($current_function->comment + 1);
 			$current_path->comment($current_path->comment + 1);
 		}
@@ -2231,7 +2250,7 @@ sub analyze_module
 		return;
 	}
 
-	#/* ƒCƒ“ƒNƒ‹[ƒhƒtƒ@ƒCƒ‹‚ğ—ñ‹“ */
+	#/* ã‚¤ãƒ³ã‚¯ãƒ«ãƒ¼ãƒ‰ãƒ•ã‚¡ã‚¤ãƒ«ã‚’åˆ—æŒ™ */
 	if ($local_line =~ /\#include\s*[\"\<](.*)[\"\>]/)
 	{
 		my $path = $1;
@@ -2243,7 +2262,7 @@ sub analyze_module
 		print "include $path\n";
 		push @include_files, $path;
 		
-		#/* #include ‚ÍÀŒøƒXƒeƒbƒv‚Æ‚µ‚ÄƒJƒEƒ“ƒg */
+		#/* #include ã¯å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—ã¨ã—ã¦ã‚«ã‚¦ãƒ³ãƒˆ */
 		&count_lines();
 		&count_steps();
 		return;
@@ -2259,24 +2278,24 @@ sub analyze_module
 		}
 
 		print "include $path\n";
-		#/* #include ‚ÍÀŒøƒXƒeƒbƒv‚Æ‚µ‚ÄƒJƒEƒ“ƒg */
+		#/* #include ã¯å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—ã¨ã—ã¦ã‚«ã‚¦ãƒ³ãƒˆ */
 		&count_lines();
 		&count_steps();
 		push @include_files, $path;
 		return;
 	}
 
-	#/* ƒCƒ“ƒNƒ‹[ƒh‚Æƒvƒ‰ƒOƒ}ˆÈŠO‚ÌƒfƒBƒŒƒNƒeƒBƒu‚Í–³‹ */
+	#/* ã‚¤ãƒ³ã‚¯ãƒ«ãƒ¼ãƒ‰ã¨ãƒ—ãƒ©ã‚°ãƒä»¥å¤–ã®ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ã¯ç„¡è¦– */
 	if ($local_line =~ /^\#/)
 	{
 #		print "ignore directive \#$'\n";
 		if ($local_line =~ /^\#define __C_ANALYZE_LITERALS_/)
 		{
-			#/* ƒŠƒeƒ‰ƒ‹’è‹`‚Íƒc[ƒ‹‚ªŸè‚É‘«‚µ‚Ä‚¢‚és‚È‚Ì‚Åƒ‰ƒCƒ“”AÀŒøƒXƒeƒbƒv‚ÌƒJƒEƒ“ƒg‚©‚çœŠO */
+			#/* ãƒªãƒ†ãƒ©ãƒ«å®šç¾©ã¯ãƒ„ãƒ¼ãƒ«ãŒå‹æ‰‹ã«è¶³ã—ã¦ã„ã‚‹è¡Œãªã®ã§ãƒ©ã‚¤ãƒ³æ•°ã€å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—ã®ã‚«ã‚¦ãƒ³ãƒˆã‹ã‚‰é™¤å¤– */
 		}
 		else
 		{
-			#/* ƒ}ƒNƒ’è‹`‚È‚Ç‚ÍÀŒøƒXƒeƒbƒv‚Æ‚µ‚ÄƒJƒEƒ“ƒg */
+			#/* ãƒã‚¯ãƒ­å®šç¾©ãªã©ã¯å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—ã¨ã—ã¦ã‚«ã‚¦ãƒ³ãƒˆ */
 			&count_lines();
 			&count_steps();
 		}
@@ -2284,12 +2303,12 @@ sub analyze_module
 	}
 	else
 	{
-		#/* ‹ósAƒRƒƒ“ƒgsAƒfƒBƒŒƒNƒeƒBƒuˆÈŠO‚ÍÀŒøƒXƒeƒbƒv‚Æ‚µ‚ÄƒJƒEƒ“ƒg */
+		#/* ç©ºè¡Œã€ã‚³ãƒ¡ãƒ³ãƒˆè¡Œã€ãƒ‡ã‚£ãƒ¬ã‚¯ãƒ†ã‚£ãƒ–ä»¥å¤–ã¯å®ŸåŠ¹ã‚¹ãƒ†ãƒƒãƒ—ã¨ã—ã¦ã‚«ã‚¦ãƒ³ãƒˆ */
 		&count_lines();
 		&count_steps();
 	}
 
-	#/* V‚µ‚¢\•¶‚ªŠJn‚µ‚½ê‡‚ÍA‚Ü‚¸Œ´•¶‚ğ•Û */
+	#/* æ–°ã—ã„æ§‹æ–‡ãŒé–‹å§‹ã—ãŸå ´åˆã¯ã€ã¾ãšåŸæ–‡ã‚’ä¿æŒ */
 	$current_sentence->text($current_sentence->text . $local_line);
 
 	&analyze_line($local_line);
@@ -2304,7 +2323,7 @@ sub analyze_module
 }
 
 
-#/* 1s‰ğÍˆ— */
+#/* 1è¡Œè§£æå‡¦ç† */
 sub analyze_line
 {
 	my $local_line = $_[0];
@@ -2321,12 +2340,12 @@ sub analyze_line
 
 		if ($remaining_line =~ /^(\s+)/)
 		{
-			#/* ƒXƒy[ƒX‚ÍƒXƒLƒbƒv */
+			#/* ã‚¹ãƒšãƒ¼ã‚¹ã¯ã‚¹ã‚­ãƒƒãƒ— */
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* ƒVƒ“ƒ{ƒ‹‚à‚µ‚­‚Í—\–ñŒê */
+			#/* ã‚·ãƒ³ãƒœãƒ«ã‚‚ã—ãã¯äºˆç´„èª */
 			$sentence = $1;
 #			print "sentence \[$1\]\n";
 			&push_current_word($sentence);
@@ -2349,7 +2368,7 @@ sub analyze_line
 			}
 			elsif ($1 =~ /^(inline|volatile|auto|signed)$/)
 			{
-				#/* ‰ğÍ‘ÎÛŠO */
+				#/* è§£æå¯¾è±¡å¤– */
 #				print "$1\n";
 			}
 			elsif ($1 =~ /^unsigned$/)
@@ -2362,7 +2381,7 @@ sub analyze_line
 			}
 			elsif ($1 =~ /^(if|for|else|while|do|switch|case|break|continue|return|goto)$/)
 			{
-				#/* §Œä•¶B‚±‚ê‚ç‚Í{};:‚Ì•¶‚Ì‹æØ‚è‚Ü‚Å‚Éˆê‚Â‚µ‚©“ü‚ç‚È‚¢‚Í‚¸ */
+				#/* åˆ¶å¾¡æ–‡ã€‚ã“ã‚Œã‚‰ã¯{};:ã®æ–‡ã®åŒºåˆ‡ã‚Šã¾ã§ã«ä¸€ã¤ã—ã‹å…¥ã‚‰ãªã„ã¯ãš */
 #				print "$1\n";
 			}
 			elsif ($1 =~ /^sizeof$/)
@@ -2380,7 +2399,7 @@ sub analyze_line
 				{
 					if ($current_pos == 0)
 					{
-						#/* æ“ª‚É‚¢‚«‚È‚è–¢’m‚ÌŒê‚ª‚­‚éê‡ */
+						#/* å…ˆé ­ã«ã„ããªã‚ŠæœªçŸ¥ã®èªãŒãã‚‹å ´åˆ */
 					}
 				}
 			}
@@ -2389,71 +2408,71 @@ sub analyze_line
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]+\.[0-9]*[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
-			#/* •‚“®¬” */
-			#/*iC99‚Å‚Í16i•\‹L‚à‰Â”\‚¾‚»‚¤‚Å‚·‚ªA‚±‚±‚Å‚Í–³‹ */
+			#/* æµ®å‹•å°æ•° */
+			#/*ï¼ˆC99ã§ã¯16é€²è¡¨è¨˜ã‚‚å¯èƒ½ã ãã†ã§ã™ãŒã€ã“ã“ã§ã¯ç„¡è¦– */
 #			print "float1 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
-			#/* •‚“®¬” */
+			#/* æµ®å‹•å°æ•° */
 #			print "float2 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]+\.[0-9]*[fFlL]*)/)
 		{
-			#/* •‚“®¬” */
+			#/* æµ®å‹•å°æ•° */
 #			print "float3 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]*\.[0-9]+[fFlL]*)/)
 		{
-			#/* •‚“®¬” */
+			#/* æµ®å‹•å°æ•° */
 #			print "float4 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-]*[0-9]+[eE][\+\-]*[0-9]+[fFlL]*)/)
 		{
-			#/* •‚“®¬” */
+			#/* æµ®å‹•å°æ•° */
 #			print "float5 $1 from $remaining_line";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(0[xX][0-9a-fA-F]+[uUlL]*)/)
 		{
-			#/* 16i” */
+			#/* 16é€²æ•° */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(0[0-7]*[uUlL]*)/)
 		{
-			#/* 8i” */
+			#/* 8é€²æ•° */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([1-9][0-9]*[uUlL]*)/)
 		{
-			#/* 10i” */
+			#/* 10é€²æ•° */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^('\\*.?')/)
 		{
-			#/* •¶š’è” */
+			#/* æ–‡å­—å®šæ•° */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /(^\;)/)
 		{
-			#/* ƒZƒ~ƒRƒƒ“ */
+			#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ */
 #			print "$1\n";
 			$current_pos += length($1);
 			&push_current_word($1);
@@ -2462,98 +2481,98 @@ sub analyze_line
 		}
 		elsif ($remaining_line =~ /^([\:\?\,]+)/)
 		{
-			#/* \•¶ã‚Ì‹L† */
+			#/* æ§‹æ–‡ä¸Šã®è¨˜å· */
 #			print "$1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(\.|\-\>)/)
 		{
-			#/* \‘¢‘Ì‚Ö‚ÌƒAƒNƒZƒXi.‚Í•‚“®¬”‚©\‘¢‘ÌƒAƒNƒZƒX‚©j */
+			#/* æ§‹é€ ä½“ã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ï¼ˆ.ã¯æµ®å‹•å°æ•°ã‹æ§‹é€ ä½“ã‚¢ã‚¯ã‚»ã‚¹ã‹ï¼‰ */
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(\<\<\=|\>\>\=)/)
 		{
-			#/* ƒVƒtƒg{‘ã“ü */
+			#/* ã‚·ãƒ•ãƒˆï¼‹ä»£å…¥ */
 #			print "operator three char! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-\*\/\%\&\|\^]\=)/)
 		{
-			#/* ‰‰Z{‘ã“ü */
+			#/* æ¼”ç®—ï¼‹ä»£å…¥ */
 #			print "operator two char1! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(\=\=|\!\=|\<\=|\>\=|\<\<|\>\>|\&\&|\|\|)/)
 		{
-			#/* “ñ•¶š‚Ì‰‰Zq */
+			#/* äºŒæ–‡å­—ã®æ¼”ç®—å­ */
 #			print "operator two char2! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^(\+\+|\-\-|\!|\~|\&|\*)/)
 		{
-			#/* ’P€‰‰Zq */
+			#/* å˜é …æ¼”ç®—å­ */
 #			print "Unary operator! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^([\+\-\*\/\%\=\<\>\&\|\^])/)
 		{
-			#/* ˆê•¶š‚Ì‰‰Zq */
+			#/* ä¸€æ–‡å­—ã®æ¼”ç®—å­ */
 #			print "operator one char! $1\n";
 			&push_current_word($1);
 			$current_pos += length($1);
 		}
 		elsif ($remaining_line =~ /^[\"]/)
 		{
-			#/* ƒ_ƒuƒ‹ƒNƒH[ƒe[ƒVƒ‡ƒ“A\‚È‚ÇƒŠƒeƒ‰ƒ‹‚É‚Ì‚İo‚é•¶š */
+			#/* ãƒ€ãƒ–ãƒ«ã‚¯ã‚©ãƒ¼ãƒ†ãƒ¼ã‚·ãƒ§ãƒ³ã€\ãªã©ãƒªãƒ†ãƒ©ãƒ«ã«ã®ã¿å‡ºã‚‹æ–‡å­— */
 			$current_pos++;
 			die "double quatation appeared!\n";
 		}
 		elsif ($remaining_line =~ /^(\\[abnrftv\\\?\"\'0])/)
 		{
-			#/* ƒGƒXƒP[ƒv•¶š */
+			#/* ã‚¨ã‚¹ã‚±ãƒ¼ãƒ—æ–‡å­— */
 #			print "$1\n";
 			$current_pos += length($1);
 			die "escape sequence!\n";
 		}
 		elsif ($remaining_line =~ /^(\[)/)
 		{
-			#/* [ ŠJ‚­ */
+			#/* [ é–‹ã */
 			&push_current_word($1);
 			$current_pos++;
 		}
 		elsif ($remaining_line =~ /^(\])/)
 		{
-			#/* ] •Â‚¶‚é */
+			#/* ] é–‰ã˜ã‚‹ */
 			&push_current_word($1);
 			$current_pos++;
 		}
 		elsif ($remaining_line =~ /^(\()/)
 		{
-			#/* ( ŠJ‚­ */
+			#/* ( é–‹ã */
 			&push_current_word($1);
 			$current_pos++;
 		}
 		elsif ($remaining_line =~ /^(\))/)
 		{
-			#/* ) •Â‚¶‚é */
+			#/* ) é–‰ã˜ã‚‹ */
 			&push_current_word($1);
 			$current_pos++;
 		}
 		elsif ($remaining_line =~ /^(\{)/)
 		{
-			#/* { ŠJ‚­ */
+			#/* { é–‹ã */
 			&push_current_word($1);
 			$current_pos++;
 		}
 		elsif ($remaining_line =~ /^(\})/)
 		{
-			#/* } •Â‚¶‚é */
+			#/* } é–‰ã˜ã‚‹ */
 			&push_current_word($1);
 			$current_pos++;
 		}
@@ -2566,7 +2585,7 @@ sub analyze_line
 }
 
 
-#/* ‰ğÍ’†‚Ì\•¶‚ÌƒNƒŠƒA */
+#/* è§£æä¸­ã®æ§‹æ–‡ã®ã‚¯ãƒªã‚¢ */
 sub clear_current_sentence
 {
 	my $text;
@@ -2635,7 +2654,7 @@ sub disp_current_words
 }
 
 
-#/* ƒeƒLƒXƒg‚É’PŒê‚ğ•t‚¯‘«‚·B“ñŒê–ÚˆÈ~‚Ìê‡‚ÍAƒXƒy[ƒX‚ğ‹ó‚¯‚é */
+#/* ãƒ†ã‚­ã‚¹ãƒˆã«å˜èªã‚’ä»˜ã‘è¶³ã™ã€‚äºŒèªç›®ä»¥é™ã®å ´åˆã¯ã€ã‚¹ãƒšãƒ¼ã‚¹ã‚’ç©ºã‘ã‚‹ */
 sub add_word_to_text
 {
 	my $text = $_[0];
@@ -2655,7 +2674,7 @@ sub add_word_to_text
 
 
 
-#/* V‹KŒ^’è‹`’Ç‰Á */
+#/* æ–°è¦å‹å®šç¾©è¿½åŠ  */
 sub create_typedef
 {
 	my $new_typedef;
@@ -2666,14 +2685,14 @@ sub create_typedef
 	$new_typedef->type("none");
 	$new_typedef->members(());
 
-	#/* ƒRƒƒ“ƒg‚ğE‚¤ */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã† */
 	$new_typedef->summary(&pop_comment(0, 1));
 	
 	return $new_typedef;
 }
 
 
-#/* V‹KŒ^’è‹`’Ç‰Á */
+#/* æ–°è¦å‹å®šç¾©è¿½åŠ  */
 sub add_typedef
 {
 	my $type = $_[0];
@@ -2702,7 +2721,7 @@ sub add_typedef
 
 
 
-#/* ‚Ü‚¸Å‰‚Ìƒ[ƒh‚ğŒˆ’è‚·‚é */	
+#/* ã¾ãšæœ€åˆã®ãƒ¯ãƒ¼ãƒ‰ã‚’æ±ºå®šã™ã‚‹ */	
 sub analyze_global_first_word
 {
 	my $temp_text = "";
@@ -2714,7 +2733,7 @@ sub analyze_global_first_word
 	{
 		if ($local_array[$loop] eq "typedef")
 		{
-			#/* typedef‚Í‚Æ‚è‚ ‚¦‚¸Šo‚¦‚Ä‚¨‚­ */
+			#/* typedefã¯ã¨ã‚Šã‚ãˆãšè¦šãˆã¦ãŠã */
 			$current_sentence->typedef(1);
 			$current_sentence->new_typedef(&create_typedef());
 		}
@@ -2735,13 +2754,13 @@ sub analyze_global_first_word
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			if ($loop + 1 == @local_array)
 			{
-				#/* ––”ö‚¾‚Á‚½‚ç‚¿‰z‚µ */
+				#/* æœ«å°¾ã ã£ãŸã‚‰æŒã¡è¶Šã— */
 				return $loop;
 			}
 
 			if ($local_array[$loop + 1] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 			{
-				#/* \‘¢‘Ì‚È‚Ç‚Ìƒ^ƒO–¼‚Í‚±‚±‚Åˆ—‚·‚éi‚Ü‚¾Œ^‚ÍŠm’è‚µ‚Ä‚¢‚È‚¢j */
+				#/* æ§‹é€ ä½“ãªã©ã®ã‚¿ã‚°åã¯ã“ã“ã§å‡¦ç†ã™ã‚‹ï¼ˆã¾ã å‹ã¯ç¢ºå®šã—ã¦ã„ãªã„ï¼‰ */
 				$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 				if ($new_typedef->tag eq "")
 				{
@@ -2751,55 +2770,55 @@ sub analyze_global_first_word
 
 				if ($loop + 1 == @local_array)
 				{
-					#/* ––”ö‚¾‚Á‚½‚ç‚³‚ç‚É‚¿‰z‚µ */
+					#/* æœ«å°¾ã ã£ãŸã‚‰ã•ã‚‰ã«æŒã¡è¶Šã— */
 					return $loop;
 				}
 
 				if ($local_array[$loop + 1] ne "{")
 				{
-					#/* \‘¢‘Ì‚Ì’è‹`‚ªn‚Ü‚ç‚È‚¢‚æ‚¤‚Å‚ ‚ê‚ÎAŒ^‚ğŠm’è‚·‚é */
+					#/* æ§‹é€ ä½“ã®å®šç¾©ãŒå§‹ã¾ã‚‰ãªã„ã‚ˆã†ã§ã‚ã‚Œã°ã€å‹ã‚’ç¢ºå®šã™ã‚‹ */
 					$current_sentence->typ_fixed(1);
 				}
 			}
 		}
 		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
 		{
-			#/* •W€‚ÌŒ^ */
+			#/* æ¨™æº–ã®å‹ */
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			$current_sentence->typ_fixed(1);
 		}
 		elsif ($local_array[$loop] =~ /^(unsigned|signed)$/)
 		{
-			#/* unsigned, signed‚ÌŒã‚ë‚Ìint‚ÍÈ—ª‰Â */
+			#/* unsigned, signedã®å¾Œã‚ã®intã¯çœç•¥å¯ */
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			$current_sentence->typ_fixed(1);
 		}
 		elsif ($local_array[$loop] =~ /^(static|extern|inline|const|volatile|auto)$/)
 		{
-			#/* Œ^‚ÌCüq */
+			#/* å‹ã®ä¿®é£¾å­ */
 #			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 		}
 		elsif ($local_array[$loop] eq "(")
 		{
-			#/* ŠÛŠ‡ŒÊ‚ÍŒ^‚ÌI—¹(ŠÖ”AŠÖ”ƒ|ƒCƒ“ƒ^‚Ìê‡‚ÍAˆø”ƒŠƒXƒg‚àŠÜ‚ß‚ÄŒ^‚É‚È‚é‚ªA‚Ğ‚Æ‚Ü‚¸‚±‚±‚Å‚ÍI—¹) */
-			($current_sentence->typ_fixed) or die "strange sentence1-1 may be omitted type! $loop, @local_array\n";		#/* Œ^‚ÌÈ—ª‚Í•s‹–‰Â */
+			#/* ä¸¸æ‹¬å¼§ã¯å‹ã®çµ‚äº†(é–¢æ•°ã€é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®å ´åˆã¯ã€å¼•æ•°ãƒªã‚¹ãƒˆã‚‚å«ã‚ã¦å‹ã«ãªã‚‹ãŒã€ã²ã¨ã¾ãšã“ã“ã§ã¯çµ‚äº†) */
+			($current_sentence->typ_fixed) or die "strange sentence1-1 may be omitted type! $loop, @local_array\n";		#/* å‹ã®çœç•¥ã¯ä¸è¨±å¯ */
 			last;
 		}
 		elsif ($local_array[$loop] eq "*")
 		{
-			#/* ƒAƒXƒ^ƒŠƒXƒN‚Ìê‡‚ÍAŒ^’è‹`‚ÍŠ®—¹ */
-			($current_sentence->typ_fixed) or die "strange sentence1-2 may be omitted type! $loop, @local_array\n";		#/* Œ^‚ÌÈ—ª‚Í•s‹–‰Â */
+			#/* ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ã®å ´åˆã¯ã€å‹å®šç¾©ã¯å®Œäº† */
+			($current_sentence->typ_fixed) or die "strange sentence1-2 may be omitted type! $loop, @local_array\n";		#/* å‹ã®çœç•¥ã¯ä¸è¨±å¯ */
 			last;
 		}
 		elsif ($local_array[$loop] eq "=")
 		{
-			#/* ƒCƒR[ƒ‹‚ª—ˆ‚½ê‡‚ÍAŒ^’è‹`‚ÍŠ®—¹ */
-			($current_sentence->typ_fixed) or die "strange sentence1-3 may be omitted type! $loop, @local_array\n";		#/* Œ^‚ÌÈ—ª‚Í•s‹–‰Â */
+			#/* ã‚¤ã‚³ãƒ¼ãƒ«ãŒæ¥ãŸå ´åˆã¯ã€å‹å®šç¾©ã¯å®Œäº† */
+			($current_sentence->typ_fixed) or die "strange sentence1-3 may be omitted type! $loop, @local_array\n";		#/* å‹ã®çœç•¥ã¯ä¸è¨±å¯ */
 			last;
 		}
 		elsif ($local_array[$loop] eq "[")
 		{
-			#/* ”z—ñ‚Ìê‡ */
+			#/* é…åˆ—ã®å ´åˆ */
 			die "strange array define! may be omitted type!\n";
 		}
 		elsif ($local_array[$loop] eq "{")
@@ -2808,11 +2827,11 @@ sub analyze_global_first_word
 			$loop = &analyze_some_bracket($loop, \$temp_text);
 			if ($temp_text eq "")
 			{
-				#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Äˆ—Œp‘±‚·‚é */
+				#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 				return $loop;
 			}
 
-			#/* Œ^‚Ì’è‹`‚ÍŠ®—¹ */
+			#/* å‹ã®å®šç¾©ã¯å®Œäº† */
 #			printf "temp text : $temp_text\n";
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $temp_text));
 			$current_sentence->typ_fixed(1);
@@ -2821,13 +2840,13 @@ sub analyze_global_first_word
 		}
 		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* ƒVƒ“ƒ{ƒ‹ */
+			#/* ã‚·ãƒ³ãƒœãƒ« */
 			if ($current_sentence->typ_fixed)
 			{
 				last;
 			}
 
-			#/* ToDo ƒ}ƒNƒ‚ÅCüq‚Æ‚©‚ğì‚ç‚ê‚½‚Ì‘Îˆ */
+			#/* ToDo ãƒã‚¯ãƒ­ã§ä¿®é£¾å­ã¨ã‹ã‚’ä½œã‚‰ã‚ŒãŸæ™‚ã®å¯¾å‡¦ */
 
 			$current_sentence->typ(&add_word_to_text($current_sentence->typ, $1));
 			$current_sentence->typ_fixed(1);
@@ -2836,12 +2855,12 @@ sub analyze_global_first_word
 		{
 			if ($loop == 0)
 			{
-				#/* –³ˆÓ–¡‚È ; */
+				#/* ç„¡æ„å‘³ãª ; */
 #				print "; without sentence!\n";
 			}
 			else
 			{
-				#/* Œ^‚¾‚¯‚Å•¶‚ª•Â‚¶‚Ä‚¢‚éƒP[ƒXB */
+				#/* å‹ã ã‘ã§æ–‡ãŒé–‰ã˜ã¦ã„ã‚‹ã‚±ãƒ¼ã‚¹ã€‚ */
 				($current_sentence->typ_fixed == 1) or die die "strange sentence1-4 may be omitted type! $loop, @local_array\n";
 			}
 		}
@@ -2873,10 +2892,10 @@ sub analyze_global_round_bracket
 	{
 		if ($local_array[$loop] eq "(")
 		{
-			#/* ()‚ğŒ©‚Â‚¯‚½‚ç */
+			#/* ()ã‚’è¦‹ã¤ã‘ãŸã‚‰ */
 			if ($current_sentence->name_fixed)
 			{
-				#/* ‚·‚Å‚ÉƒVƒ“ƒ{ƒ‹–¼‚ÍŒˆ’è‚µ‚Ä‚¢‚é‚Ì‚ÅAˆø”ƒŠƒXƒg‚ª‚­‚éB‚±‚±‚Å‚ÍÄ‹A‚µ‚È‚¢ */
+				#/* ã™ã§ã«ã‚·ãƒ³ãƒœãƒ«åã¯æ±ºå®šã—ã¦ã„ã‚‹ã®ã§ã€å¼•æ•°ãƒªã‚¹ãƒˆãŒãã‚‹ã€‚ã“ã“ã§ã¯å†å¸°ã—ãªã„ */
 				$loop = &analyze_some_bracket($loop, \$sub_text);
 				if ($sub_text eq "")
 				{
@@ -2887,16 +2906,16 @@ sub analyze_global_round_bracket
 
 				if ($current_sentence->is_func)
 				{
-					#/* ‚·‚Å‚Éˆø”ƒŠƒXƒg‚ªo‚ÄAŠÖ”‚ªŠm’è‚µ‚Ä‚¢‚é‚Ì‚ÉA‚³‚ç‚É()Š‡ŒÊ‚ª—ˆ‚é‚Ì‚ÍAŠÖ”ƒ|ƒCƒ“ƒ^‚ğ–ß‚è’l‚Æ‚·‚éŠÖ”‚©A‚à‚µ‚­‚Í‚»‚ÌŠÖ”‚Ö‚Ìƒ|ƒCƒ“ƒ^ */
+					#/* ã™ã§ã«å¼•æ•°ãƒªã‚¹ãƒˆãŒå‡ºã¦ã€é–¢æ•°ãŒç¢ºå®šã—ã¦ã„ã‚‹ã®ã«ã€ã•ã‚‰ã«()æ‹¬å¼§ãŒæ¥ã‚‹ã®ã¯ã€é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‚’æˆ»ã‚Šå€¤ã¨ã™ã‚‹é–¢æ•°ã‹ã€ã‚‚ã—ãã¯ãã®é–¢æ•°ã¸ã®ãƒã‚¤ãƒ³ã‚¿ */
 					if ($current_sentence->astarisk_f > 0)
 					{
-						#/* ŠÖ”ƒ|ƒCƒ“ƒ^‚Ìê‡ */
+						#/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®å ´åˆ */
 #						printf "astarisk_f : %d\n", $current_sentence->astarisk_f;
 						$current_sentence->typ($current_sentence->typ . " (" . "*" x $current_sentence->astarisk . ") " . $sub_text . " (" . "*" x $current_sentence->astarisk_f . ") " . $current_sentence->arg_list);
 					}
 					else
 					{
-						#/* ŠÖ”‚Ìê‡ */
+						#/* é–¢æ•°ã®å ´åˆ */
 #						printf "no astarisk_f : %d\n", $current_sentence->astarisk_f;
 						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_u . ") " . $sub_text);
 						$current_sentence->astarisk_u(0);
@@ -2904,10 +2923,10 @@ sub analyze_global_round_bracket
 				}
 				else
 				{
-					#/* ‚Æ‚è‚ ‚¦‚¸ŠÖ”‚©ŠÖ”ƒ|ƒCƒ“ƒ^‚©‚ÍŠm’èBˆø”ƒŠƒXƒg‚ğŠo‚¦‚Ä‚¨‚­ */
+					#/* ã¨ã‚Šã‚ãˆãšé–¢æ•°ã‹é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‹ã¯ç¢ºå®šã€‚å¼•æ•°ãƒªã‚¹ãƒˆã‚’è¦šãˆã¦ãŠã */
 					if ($current_sentence->astarisk_f > 0)
 					{
-						#/* ŠÖ”ƒ|ƒCƒ“ƒ^‚Ìê‡ */
+						#/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®å ´åˆ */
 #						printf "astarisk_f4 : type:%s\n", $current_sentence->typ;
 #						printf "astarisk_f4 : temp_text:$sub_text\n";
 						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_f . ") ");
@@ -2932,12 +2951,12 @@ sub analyze_global_round_bracket
 		}
 		elsif ($local_array[$loop] eq ")")
 		{
-			#/* •Â‚¶‚½‚Æ‚±‚ë‚ÅI—¹B */
+			#/* é–‰ã˜ãŸã¨ã“ã‚ã§çµ‚äº†ã€‚ */
 			($current_sentence->name_fixed) or die "missing token! @local_array\n";
 
 			if ($current_sentence->is_func == 0)
 			{
-				#/* Š‡ŒÊ‚ª•Â‚¶‚éÛ‚ÉAˆø”ƒŠƒXƒg‚ª‘¶İ‚µ‚Ä‚¨‚ç‚¸A‚È‚¨‚©‚Âƒ[ƒJƒ‹ƒAƒXƒ^ƒŠƒXƒN‚ª‚ ‚éê‡‚ÍAŠÖ”ƒ|ƒCƒ“ƒ^‚É‚È‚é‰Â”\«‚ ‚è */
+				#/* æ‹¬å¼§ãŒé–‰ã˜ã‚‹éš›ã«ã€å¼•æ•°ãƒªã‚¹ãƒˆãŒå­˜åœ¨ã—ã¦ãŠã‚‰ãšã€ãªãŠã‹ã¤ãƒ­ãƒ¼ã‚«ãƒ«ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ãŒã‚ã‚‹å ´åˆã¯ã€é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã«ãªã‚‹å¯èƒ½æ€§ã‚ã‚Š */
 				$current_sentence->astarisk_f($current_sentence->astarisk_f + $local_astarisk);
 #				printf "add astarisk_f : %d $loop, @local_array\n", $current_sentence->astarisk_f;
 			}
@@ -2945,13 +2964,13 @@ sub analyze_global_round_bracket
 			{
 				if ($arglist_in_this_level)
 				{
-					#/* ‚±‚Ì()‚Ì’†‚Éˆø”ƒŠƒXƒg‚ª‚ ‚Á‚½ê‡AƒAƒXƒ^ƒŠƒXƒN‚Ìˆµ‚¢‚Í‚Ü‚¾”»’f‚Å‚«‚È‚¢ */
+					#/* ã“ã®()ã®ä¸­ã«å¼•æ•°ãƒªã‚¹ãƒˆãŒã‚ã£ãŸå ´åˆã€ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ã®æ‰±ã„ã¯ã¾ã åˆ¤æ–­ã§ããªã„ */
 					$current_sentence->astarisk_u($current_sentence->astarisk_u + $local_astarisk);
 #					printf "add astarisk_u : %d $loop, @local_array\n", $current_sentence->astarisk_u;
 				}
 				else
 				{
-					#/* ‚·‚Å‚Éˆø”ƒŠƒXƒg‚ª‚ ‚éê‡‚ÍA‚±‚Ìƒ[ƒJƒ‹ƒAƒXƒ^ƒŠƒXƒN‚Í–ß‚è’l‚ÌŒ^‚É‚©‚©‚é */
+					#/* ã™ã§ã«å¼•æ•°ãƒªã‚¹ãƒˆãŒã‚ã‚‹å ´åˆã¯ã€ã“ã®ãƒ­ãƒ¼ã‚«ãƒ«ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ã¯æˆ»ã‚Šå€¤ã®å‹ã«ã‹ã‹ã‚‹ */
 					$current_sentence->astarisk($current_sentence->astarisk + $local_astarisk);
 				}
 			}
@@ -2962,40 +2981,40 @@ sub analyze_global_round_bracket
 		}
 		elsif ($local_array[$loop] eq "*")
 		{
-			#/* ()“à‚ÌƒAƒXƒ^ƒŠƒXƒN‚ÍˆÊ’u‚É‚æ‚Á‚ÄŒ^‚É‚Â‚­‚Ì‚©AŠÖ”ƒ|ƒCƒ“ƒ^‚É‚È‚é‚Ì‚©•ª‚©‚ê‚é */
+			#/* ()å†…ã®ã‚¢ã‚¹ã‚¿ãƒªã‚¹ã‚¯ã¯ä½ç½®ã«ã‚ˆã£ã¦å‹ã«ã¤ãã®ã‹ã€é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã«ãªã‚‹ã®ã‹åˆ†ã‹ã‚Œã‚‹ */
 			$local_astarisk++;
 			$out_text = &add_word_to_text($out_text, $local_array[$loop]);
 		}
 		elsif ($local_array[$loop] =~ /^(void|char|int|short|long|float|double)$/)
 		{
-			#/* Šù‘¶‚ÌŒ^‚ª—ˆ‚½ê‡‚ÍA–ß‚è’l‚ÌŒ^‚ğÈ—ª‚µ‚½ŠÖ”‚ÌéŒ¾‚Æ‚¢‚¤‚±‚Æ‚É‚È‚é‚ªA•s‹–‰ÂI */
+			#/* æ—¢å­˜ã®å‹ãŒæ¥ãŸå ´åˆã¯ã€æˆ»ã‚Šå€¤ã®å‹ã‚’çœç•¥ã—ãŸé–¢æ•°ã®å®£è¨€ã¨ã„ã†ã“ã¨ã«ãªã‚‹ãŒã€ä¸è¨±å¯ï¼ */
 			die "omitted return type is forbidden! case 1  $loop, @local_array\n";
 		}
 		elsif ($local_array[$loop] eq ",")
 		{
-			#/* , ‚ª“ü‚é‚Æ‚¢‚¤‚±‚Æ‚Íˆø”ƒŠƒXƒg‚Æ‚¢‚¤‚±‚ÆB‚±‚ê‚à–ß‚è’l‚ÌŒ^‚ğÈ—ª‚µ‚½‚Æ‚İ‚È‚µ‚Ä•s‹–‰ÂI */
+			#/* , ãŒå…¥ã‚‹ã¨ã„ã†ã“ã¨ã¯å¼•æ•°ãƒªã‚¹ãƒˆã¨ã„ã†ã“ã¨ã€‚ã“ã‚Œã‚‚æˆ»ã‚Šå€¤ã®å‹ã‚’çœç•¥ã—ãŸã¨ã¿ãªã—ã¦ä¸è¨±å¯ï¼ */
 			die "omitted return type is forbidden! case 2  $loop, @local_array\n";
 		}
 		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* ƒVƒ“ƒ{ƒ‹–¼‚ª—ˆ‚½I */
+			#/* ã‚·ãƒ³ãƒœãƒ«åãŒæ¥ãŸï¼ */
 			$current_sentence->name($1);
 			$current_sentence->name_fixed(1);
 			$out_text = &add_word_to_text($out_text, $local_array[$loop]);
 		}
 		else
 		{
-			#/* ‚»‚Ì‘¼‚Ìƒ[ƒhB‚ ‚è“¾‚È‚¢ */
+			#/* ãã®ä»–ã®ãƒ¯ãƒ¼ãƒ‰ã€‚ã‚ã‚Šå¾—ãªã„ */
 			die "strange global round bracket! @local_array\n";
 		}
 	}
 
-	#/* ƒ‹[ƒv‚ğ”²‚¯‚½ê‡‚ÍA()‚ª•Â‚¶‚Ä‚¢‚È‚¢‚Ì‚ÅŸs‚É‚¿‰z‚µ */
+	#/* ãƒ«ãƒ¼ãƒ—ã‚’æŠœã‘ãŸå ´åˆã¯ã€()ãŒé–‰ã˜ã¦ã„ãªã„ã®ã§æ¬¡è¡Œã«æŒã¡è¶Šã— */
 	$$ref_text = "";
 	return $_[0];
 }
 
-#/* ‘±‚¢‚ÄƒVƒ“ƒ{ƒ‹‚ğŠm’è‚·‚é */
+#/* ç¶šã„ã¦ã‚·ãƒ³ãƒœãƒ«ã‚’ç¢ºå®šã™ã‚‹ */
 sub analyze_global_second_word
 {
 	my $loop = $_[0];
@@ -3007,10 +3026,10 @@ sub analyze_global_second_word
 	{
 		if ($local_array[$loop] eq "(")
 		{
-			#/* ()‚ğŒ©‚Â‚¯‚½‚ç */
+			#/* ()ã‚’è¦‹ã¤ã‘ãŸã‚‰ */
 			if ($current_sentence->name_fixed)
 			{
-				#/* ‚·‚Å‚ÉƒVƒ“ƒ{ƒ‹–¼‚ÍŒˆ’è‚µ‚Ä‚¢‚é‚Ì‚ÅAˆø”ƒŠƒXƒg‚ª‚­‚éB‚±‚±‚Å‚ÍÄ‹A‚µ‚È‚¢ */
+				#/* ã™ã§ã«ã‚·ãƒ³ãƒœãƒ«åã¯æ±ºå®šã—ã¦ã„ã‚‹ã®ã§ã€å¼•æ•°ãƒªã‚¹ãƒˆãŒãã‚‹ã€‚ã“ã“ã§ã¯å†å¸°ã—ãªã„ */
 				$loop = &analyze_some_bracket($loop, \$temp_text);
 #				printf "() found2! $temp_text is_func:%d\n", $current_sentence->is_func;
 				if ($temp_text eq "")
@@ -3021,10 +3040,10 @@ sub analyze_global_second_word
 
 				if ($current_sentence->is_func)
 				{
-					#/* ‚·‚Å‚Éˆø”ƒŠƒXƒg‚ªo‚ÄAŠÖ”‚ªŠm’è‚µ‚Ä‚¢‚é‚Ì‚ÉA‚³‚ç‚É()Š‡ŒÊ‚ª—ˆ‚é‚Ì‚ÍAŠÖ”ƒ|ƒCƒ“ƒ^‚ğ–ß‚è’l‚Æ‚·‚éŠÖ”‚©A‚à‚µ‚­‚Í‚»‚ÌŠÖ”‚Ö‚Ìƒ|ƒCƒ“ƒ^ */
+					#/* ã™ã§ã«å¼•æ•°ãƒªã‚¹ãƒˆãŒå‡ºã¦ã€é–¢æ•°ãŒç¢ºå®šã—ã¦ã„ã‚‹ã®ã«ã€ã•ã‚‰ã«()æ‹¬å¼§ãŒæ¥ã‚‹ã®ã¯ã€é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‚’æˆ»ã‚Šå€¤ã¨ã™ã‚‹é–¢æ•°ã‹ã€ã‚‚ã—ãã¯ãã®é–¢æ•°ã¸ã®ãƒã‚¤ãƒ³ã‚¿ */
 					if ($current_sentence->astarisk_f > 0)
 					{
-						#/* ŠÖ”ƒ|ƒCƒ“ƒ^‚Ìê‡ */
+						#/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®å ´åˆ */
 #						printf "astarisk_f2 : %d\n", $current_sentence->astarisk_f;
 						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . $temp_text . " (" . "*" x $current_sentence->astarisk_f . ") " . $current_sentence->arg_list);
 #						printf "astarisk_f2 : type:%s\n", $current_sentence->typ;
@@ -3033,7 +3052,7 @@ sub analyze_global_second_word
 					}
 					else
 					{
-						#/* ŠÖ”‚Ìê‡ */
+						#/* é–¢æ•°ã®å ´åˆ */
 #						printf "no astarisk_f2 : %d\n", $current_sentence->astarisk_f;
 						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_u . ") " . $temp_text);
 						$current_sentence->astarisk_u(0);
@@ -3042,10 +3061,10 @@ sub analyze_global_second_word
 				}
 				else
 				{
-					#/* ‚Æ‚è‚ ‚¦‚¸ŠÖ”‚©ŠÖ”ƒ|ƒCƒ“ƒ^‚©‚ÍŠm’èBˆø”ƒŠƒXƒg‚ğŠo‚¦‚Ä‚¨‚­ */
+					#/* ã¨ã‚Šã‚ãˆãšé–¢æ•°ã‹é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã‹ã¯ç¢ºå®šã€‚å¼•æ•°ãƒªã‚¹ãƒˆã‚’è¦šãˆã¦ãŠã */
 					if ($current_sentence->astarisk_f > 0)
 					{
-						#/* ŠÖ”ƒ|ƒCƒ“ƒ^‚Ìê‡ */
+						#/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®å ´åˆ */
 						$current_sentence->typ($current_sentence->typ . "*" x $current_sentence->astarisk . " (" . "*" x $current_sentence->astarisk_f . ") " . $temp_text);
 #						printf "astarisk_f3 : type:%s\n", $current_sentence->typ;
 #						printf "astarisk_f3 : temp_text:$temp_text\n";
@@ -3057,13 +3076,13 @@ sub analyze_global_second_word
 			}
 			else
 			{
-				#/* –¼‘O‚ªŠm’è‚µ‚Ä‚¢‚È‚¢ê‡‚ÍAê—p‚Ì‰ğÍˆ— */
+				#/* åå‰ãŒç¢ºå®šã—ã¦ã„ãªã„å ´åˆã¯ã€å°‚ç”¨ã®è§£æå‡¦ç† */
 				$loop = &analyze_global_round_bracket($loop, \$temp_text);
 			}
 		}
 		elsif ($local_array[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* ƒVƒ“ƒ{ƒ‹–¼‚ª—ˆ‚½I */
+			#/* ã‚·ãƒ³ãƒœãƒ«åãŒæ¥ãŸï¼ */
 			$current_sentence->name($1);
 			$current_sentence->name_fixed(1);
 		}
@@ -3073,18 +3092,18 @@ sub analyze_global_second_word
 		}
 		elsif ($local_array[$loop] eq "{")
 		{
-			#/* ‚±‚±‚Å‚Í‰½‚à‚µ‚È‚¢ */
+			#/* ã“ã“ã§ã¯ä½•ã‚‚ã—ãªã„ */
 		}
 		elsif ($local_array[$loop] eq "[")
 		{
-			#/* ”z—ñ‚Ìê‡ */
+			#/* é…åˆ—ã®å ´åˆ */
 			($current_sentence->name_fixed) or die "strange array define! $loop, @local_array\n";
 			$loop = &analyze_some_bracket($loop, \$temp_text);
 			$current_sentence->name($current_sentence->name . $temp_text);
 		}
 		elsif ($local_array[$loop] eq "=")
 		{
-			#/* •Ï”‚Ì‰Šú’l‚ª—ˆ‚éƒpƒ^[ƒ“ */
+			#/* å¤‰æ•°ã®åˆæœŸå€¤ãŒæ¥ã‚‹ãƒ‘ã‚¿ãƒ¼ãƒ³ */
 			($current_sentence->name_fixed) or die "strange init value! $loop, @local_array\n";
 
 			$loop++;
@@ -3095,7 +3114,7 @@ sub analyze_global_second_word
 					$loop = &analyze_some_bracket($loop, \$temp_text);
 					if ($temp_text eq "")
 					{
-						#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Ä = ‚©‚çˆ—Œp‘±‚·‚é */
+						#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦ = ã‹ã‚‰å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 						return $loop - 1;
 					}
 
@@ -3106,7 +3125,7 @@ sub analyze_global_second_word
 					$loop = &analyze_some_bracket($loop, \$temp_text);
 					if ($temp_text eq "")
 					{
-						#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Ä = ‚©‚çˆ—Œp‘±‚·‚é */
+						#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦ = ã‹ã‚‰å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 						return $loop - 1;
 					}
 
@@ -3146,11 +3165,11 @@ sub analyze_global_second_word
 			}
 			else
 			{
-				#/* ŠÖ”‚ÌéŒ¾‚Ìê‡‚ÍA–³‹ */
+				#/* é–¢æ•°ã®å®£è¨€ã®å ´åˆã¯ã€ç„¡è¦– */
 				$current_sentence->is_func(0);
 			}
 
-			#/* Œ^ˆÈŠO‚Ìî•ñ‚Í–Y‚ê‚é */
+			#/* å‹ä»¥å¤–ã®æƒ…å ±ã¯å¿˜ã‚Œã‚‹ */
 			$current_sentence->name("");
 			$current_sentence->name_fixed(0);
 			$current_sentence->init_val("");
@@ -3161,7 +3180,7 @@ sub analyze_global_second_word
 		}
 		elsif ($local_array[$loop] eq ";")
 		{
-			#/* ‚±‚±‚Å‚Í‰½‚à‚µ‚È‚¢ */
+			#/* ã“ã“ã§ã¯ä½•ã‚‚ã—ãªã„ */
 		}
 		else
 		{
@@ -3182,13 +3201,13 @@ sub analyze_global_sentence
 
 #	print "analyze_global_sentence : $loop, @local_array\n";
 
-	#/* ‚Ü‚¸Å‰‚ÉŒ^‚ğŒˆ’è‚·‚é */	
+	#/* ã¾ãšæœ€åˆã«å‹ã‚’æ±ºå®šã™ã‚‹ */	
 	if ($current_sentence->typ_fixed == 0)
 	{
 		$loop = &analyze_global_first_word($loop);
 		if ($current_sentence->typ_fixed == 0)
 		{
-			#/* Œ^‚ª–¢Šm’è‚Ìê‡‚ÍAŸs‚É‚¿‰z‚µ‚ÄŒp‘± */
+			#/* å‹ãŒæœªç¢ºå®šã®å ´åˆã¯ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦ç¶™ç¶š */
 			return $loop;
 		}
 	}
@@ -3197,7 +3216,7 @@ sub analyze_global_sentence
 	return $loop;
 }
 
-#/* ƒOƒ[ƒoƒ‹ƒXƒR[ƒv‚Ì‚Ps‰ğÍ */
+#/* ã‚°ãƒ­ãƒ¼ãƒãƒ«ã‚¹ã‚³ãƒ¼ãƒ—ã®ï¼‘è¡Œè§£æ */
 sub analyze_global_line
 {
 	my @local_array = @{$current_sentence->words};
@@ -3253,10 +3272,10 @@ sub analyze_global_line
 	}
 	else
 	{
-		#/* Ÿs‚Éˆ—‚ğ‚¿‰z‚· */
+		#/* æ¬¡è¡Œã«å‡¦ç†ã‚’æŒã¡è¶Šã™ */
 		if ($current_sentence->typedef)
 		{
-			#/* typedef‰ğÍ’†‚¾‚¯‚ÍA‚¿‰z‚µ‚Â‚Â‚à’€Ÿˆ—‚·‚é */
+			#/* typedefè§£æä¸­ã ã‘ã¯ã€æŒã¡è¶Šã—ã¤ã¤ã‚‚é€æ¬¡å‡¦ç†ã™ã‚‹ */
 			$current_sentence->position(&analyze_global_sentence());
 		}
 #		print "analyze_global_line none @local_array\n";
@@ -3265,10 +3284,10 @@ sub analyze_global_line
 }
 
 
-#/* eƒpƒX‚É•œ‹A‚³‚¹‚é */
+#/* è¦ªãƒ‘ã‚¹ã«å¾©å¸°ã•ã›ã‚‹ */
 sub pop_path
 {
-	#/* ƒpƒX•œ‹A‚·‚é‘O‚ÉŒ»İ‚Ìpu_block‚ğ“f‚«o‚· */
+	#/* ãƒ‘ã‚¹å¾©å¸°ã™ã‚‹å‰ã«ç¾åœ¨ã®pu_blockã‚’åãå‡ºã™ */
 	&push_pu_text("");
 
 	$current_path = $current_path->parent;
@@ -3311,7 +3330,7 @@ sub new_path
 
 	if ($parent ne "")
 	{
-		#/* Œ³‚ÌPATH‚Ìq‚Æ‚µ‚Ä“o˜^‚·‚é */
+		#/* å…ƒã®PATHã®å­ã¨ã—ã¦ç™»éŒ²ã™ã‚‹ */
 		push @{$parent->child}, $temp_path;
 		$ret_val = @{$parent->child} - 1;
 		$temp_path->level($parent->level + 1);
@@ -3348,7 +3367,7 @@ sub new_function
 	$current_function->steps(0);
 	$current_function->make_tree(0);
 
-	#/* ƒRƒƒ“ƒg‚ğE‚¤ */
+	#/* ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã† */
 	$current_function->summary(&pop_comment(1,1));
 
 	$current_function->static($current_sentence->static);
@@ -3373,7 +3392,7 @@ sub new_function
 
 
 
-#/* ŠÖ”‚Ì‰¼ˆø”‰ğÍˆ—(–ß‚è’l‚Íˆø”ƒŠƒXƒg‚ğ•Â‚¶‚é)‚ÌƒCƒ“ƒfƒbƒNƒX) */
+#/* é–¢æ•°ã®ä»®å¼•æ•°è§£æå‡¦ç†(æˆ»ã‚Šå€¤ã¯å¼•æ•°ãƒªã‚¹ãƒˆã‚’é–‰ã˜ã‚‹)ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹) */
 sub analyze_arg_list
 {
 #	my @local_array = @{$current_sentence->words};
@@ -3390,21 +3409,21 @@ sub analyze_arg_list
 #		print "analyze arg list : $local_array[$loop]\n";
 		if ($local_array[$loop] =~ /[\)\,]/)
 		{
-			#/* , ‚Ü‚½‚Í ) ‚Åˆø”‚Ì‹æØ‚è */
+			#/* , ã¾ãŸã¯ ) ã§å¼•æ•°ã®åŒºåˆ‡ã‚Š */
 
 			if ($temp1 eq "")
 			{
-				#/* ()‚Åˆø”‚Ì‚È‚¢ƒpƒ^[ƒ“ */
+				#/* ()ã§å¼•æ•°ã®ãªã„ãƒ‘ã‚¿ãƒ¼ãƒ³ */
 				print "function with no arg1!\n";
 			}
 			elsif ($temp1 eq "void")
 			{
-				#/* (void)‚Åˆø”‚Ì‚È‚¢ƒpƒ^[ƒ“ */
+				#/* (void)ã§å¼•æ•°ã®ãªã„ãƒ‘ã‚¿ãƒ¼ãƒ³ */
 				print "function with no arg2!\n";
 			}
 			elsif ($temp2 eq "")
 			{
-				#/* Œ^‚ğÈ—ª‚µ‚½ê‡ */
+				#/* å‹ã‚’çœç•¥ã—ãŸå ´åˆ */
 				push @{$current_function->args_typ},  "int";
 				push @{$current_function->args_name}, "$temp1";
 				$temp2 = "";
@@ -3439,12 +3458,12 @@ sub analyze_arg_list
 		}
 		elsif ($temp1 eq "")
 		{
-			#/* Å‰‚ÌƒVƒ“ƒ{ƒ‹ */
+			#/* æœ€åˆã®ã‚·ãƒ³ãƒœãƒ« */
 			$temp1 = $local_array[$loop];
 		}
 		else
 		{
-			#/* “ñ‚Â–Ú‚ÌƒVƒ“ƒ{ƒ‹ */
+			#/* äºŒã¤ç›®ã®ã‚·ãƒ³ãƒœãƒ« */
 			my $type_name;
 			$temp2 = $local_array[$loop];
 			$type_name = "$is_struct" . "$temp1";
@@ -3466,7 +3485,7 @@ sub analyze_arg_list
 }
 
 
-#/* •Ï”‚Ì“o˜^ */
+#/* å¤‰æ•°ã®ç™»éŒ² */
 sub add_variable
 {
 	my $type = $current_sentence->typ;
@@ -3482,7 +3501,7 @@ sub add_variable
 		$new_typedef->member_text($type);
 		if ($new_typedef->type eq "none")
 		{
-			#/* ƒRƒƒ“ƒg‚ğE‚¤ */
+			#/* ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã† */
 			$new_typedef->summary(&pop_comment(0,1));
 		}
 
@@ -3501,7 +3520,7 @@ sub add_variable
 		else
 		{
 			my $tmp_value = $current_sentence->init_val;
-			$tmp_value =~ s/\t/ /g;								#/* ƒn[ƒhƒ^ƒu”rœ */
+			$tmp_value =~ s/\t/ /g;								#/* ãƒãƒ¼ãƒ‰ã‚¿ãƒ–æ’é™¤ */
 			$new_variable->init_val($tmp_value);
 		}
 
@@ -3509,7 +3528,7 @@ sub add_variable
 		$new_variable->static($current_sentence->static);
 		$new_variable->const($current_sentence->const);
 
-		#/* ƒRƒƒ“ƒg‚ğE‚¤ */
+		#/* ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã† */
 		$new_variable->summary(&pop_comment(0,1));
 
 		@{$new_variable->func_read}  = ();
@@ -3531,17 +3550,28 @@ sub add_variable
 }
 
 
-#/* “Á‚É‰ğÍ‘ÎÛ‚Æ‚È‚ç‚È‚¢‚æ‚¤‚Èƒ[ƒh‚Ì’Ç‰Á */
+#/* ç‰¹ã«è§£æå¯¾è±¡ã¨ãªã‚‰ãªã„ã‚ˆã†ãªãƒ¯ãƒ¼ãƒ‰ã®è¿½åŠ  */
 sub add_free_word
 {
 	my $add_word = $_[0];
 
-	$add_word =~ s/]/n/g;   #/* ‚¤‚Ü‚­ƒGƒXƒP[ƒv‚Å‚«‚¸A‹ê“÷‚Ìô */
+	$add_word =~ s/]\s*$/ï¼½/g;   #/* ã†ã¾ãã‚¨ã‚¹ã‚±ãƒ¼ãƒ—ã§ããšã€è‹¦è‚‰ã®ç­– */
+#	$add_word =~ s/]/ï¼½/g;   #/* ã†ã¾ãã‚¨ã‚¹ã‚±ãƒ¼ãƒ—ã§ããšã€è‹¦è‚‰ã®ç­– */
 
 	if ($current_path->pu_block eq "")
 	{
 		if ($add_word ne "\n")
 		{
+			#/* pu_blockã®å…ˆé ­ã«é™ã‚Šã€ã‚³ãƒ¡ãƒ³ãƒˆã‚’æ‹¾ã£ã¦ä»˜ã‘ã‚‹ */
+			if ($pick_comment_to_pu)
+			{
+				my $tmp_comment = &pop_comment_for_pu();
+				if ($tmp_comment ne " ")
+				{
+					$add_word = $tmp_comment . "\n" . $add_word;
+				}
+			}
+
 			$current_path->pu_block($add_word);
 		}
 	}
@@ -3556,7 +3586,7 @@ sub add_free_word
 }
 
 
-#/* if•¶‚Ìˆ— */
+#/* ifæ–‡ã®å‡¦ç† */
 sub analyze_if
 {
 	my $loop        = $_[0];
@@ -3565,7 +3595,7 @@ sub analyze_if
 
 	if ($loop+1 >= @local_array)
 	{
-		#/* ğŒ®‚ªn‚Ü‚ç‚È‚¢ê‡ */
+		#/* æ¡ä»¶å¼ãŒå§‹ã¾ã‚‰ãªã„å ´åˆ */
 		$current_sentence->clear(0);
 		$current_sentence->position($_[0]);
 		return @local_array - 1;
@@ -3573,7 +3603,7 @@ sub analyze_if
 
 	if ($local_array[$loop+1] ne "(")
 	{
-		#/* if‚ÌŒã‚É()‚ª—ˆ‚È‚¢Bƒ}ƒNƒg‚Á‚Ä‚¢‚é‚â‚Â */
+		#/* ifã®å¾Œã«()ãŒæ¥ãªã„ã€‚ãƒã‚¯ãƒ­ä½¿ã£ã¦ã„ã‚‹ã‚„ã¤ */
 		$loop++;
 		$condition = $local_array[$loop];
 	}
@@ -3584,13 +3614,13 @@ sub analyze_if
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
-			#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Äˆ—Œp‘±‚·‚é */
+			#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 			$current_sentence->clear(0);
 			$current_sentence->position($_[0]);
 			return @local_array - 1;
 		}
 
-		#/* ˆê”ÔŠO‚Ì()‚Íæ‚èœ‚­ */
+		#/* ä¸€ç•ªå¤–ã®()ã¯å–ã‚Šé™¤ã */
 		$condition =~ s/^\((.+)\)$/$1/;
 	}
 
@@ -3600,15 +3630,34 @@ sub analyze_if
 	$condition =~ s/\&\&/\&\&\n$cont_size/g;
 	if ($local_array[0] eq "else")
 	{
-		#/* else if•¶‚Ìê‡‚Í : ÅŒã‚É’Ç‰Á‚³‚ê‚Ä‚¢‚é‚Å‚ ‚ë‚¤endif‚ğpop‚µ‚Ä‚µ‚Ü‚¤ */
+		#/* else ifæ–‡ã®å ´åˆã¯ : æœ€å¾Œã«è¿½åŠ ã•ã‚Œã¦ã„ã‚‹ã§ã‚ã‚ã†endifã‚’popã—ã¦ã—ã¾ã† */
 #		print "analyze else if!\n";
 		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
+
+		if ($pick_comment_to_pu)
+		{
+			my $tmp_comment = &pop_comment_for_pu();
+			if ($tmp_comment ne " ")
+			{
+				$condition = $tmp_comment . "\n" . CONT_SIZE . $condition
+			}
+		}
+
 		&push_pu_text("elseif (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
 		&create_new_path("else if");
 	}
 	else
 	{
+		if ($pick_comment_to_pu)
+		{
+			my $tmp_comment = &pop_comment_for_pu();
+			if ($tmp_comment ne " ")
+			{
+				$condition = $tmp_comment . "\n" . CONT_SIZE . $condition
+			}
+		}
+
 		&push_pu_text("if (" . CONT_SIZE . $condition . ") then (" . CONT_SIZE . "Yes)\n");
 		&create_new_path("if");
 	}
@@ -3621,6 +3670,21 @@ sub analyze_do
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
+	my $tmp_comment = " ";
+	if ($pick_comment_to_pu)
+	{
+		$tmp_comment = &pop_comment_for_pu();
+	}
+
+	if ($tmp_comment ne " ")
+	{
+		$tmp_comment = "partition \"" . $tmp_comment . "\\ndo while loop\" {\n";
+	}
+	else
+	{
+		$tmp_comment = "partition \"do while loop\" {\n";
+	}
+
 	&push_pu_text("partition \"do while loop\" {\n");
 	&push_pu_text("repeat\n");
 	&create_new_path("do");
@@ -3632,7 +3696,7 @@ sub analyze_goto
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* goto•¶ */
+	#/* gotoæ–‡ */
 	my $label = $local_array[$loop + 1];
 	
 	if ($label =~ /[^_A-Za-z0-9]/)
@@ -3662,7 +3726,7 @@ sub analyze_break
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* break•¶ */
+	#/* breakæ–‡ */
 	my $break_mode = &get_current_break_mode();
 
 	if ($local_array[$loop + 1] ne ";")
@@ -3673,16 +3737,16 @@ sub analyze_break
 #	print "analyze break($break_mode) $loop, @local_array\n";
 	if ($break_mode eq "loop")
 	{
-		#/* ƒ‹[ƒvˆ—’†‚Å‚ ‚ê‚ÎAƒ‹[ƒv‚ÌI—¹ */
+		#/* ãƒ«ãƒ¼ãƒ—å‡¦ç†ä¸­ã§ã‚ã‚Œã°ã€ãƒ«ãƒ¼ãƒ—ã®çµ‚äº† */
 		&push_pu_text("break\n");
 	}
 	else
 	{
-		#/* ƒ‹[ƒvˆ—‚Å‚È‚¯‚ê‚ÎAswitch ` case•¶‚ÌI—¹ */
+		#/* ãƒ«ãƒ¼ãƒ—å‡¦ç†ã§ãªã‘ã‚Œã°ã€switch ï½ caseæ–‡ã®çµ‚äº† */
 		if ( ($current_path->type eq "case") ||
 		     ($current_path->type eq "default") )
 		{
-			#/* c”O‚È‚ª‚çAif else‚Ì—¼•û‚Åbreak‚µ‚½ê‡‚È‚Ç‚ÍAE‚¦‚Ü‚¹‚ñ */
+			#/* æ®‹å¿µãªãŒã‚‰ã€if elseã®ä¸¡æ–¹ã§breakã—ãŸå ´åˆãªã©ã¯ã€æ‹¾ãˆã¾ã›ã‚“ */
 			&push_pu_text("");
 			$current_path->break(1);
 		}
@@ -3698,12 +3762,12 @@ sub analyze_continue
 {
 	my $loop        = $_[0];
 
-	#/* continue•¶ */
-	#/* ‰ğÍ‘ÎÛŠO‚Ìƒ[ƒh */
-	#/* §Œäƒtƒ[‚Æ‚µ‚Ä‚Í‚Â‚È‚ª‚ç‚È‚¢‚ªA‚¹‚ß‚Ädetach‚·‚é */
+	#/* continueæ–‡ */
+	#/* è§£æå¯¾è±¡å¤–ã®ãƒ¯ãƒ¼ãƒ‰ */
+	#/* åˆ¶å¾¡ãƒ•ãƒ­ãƒ¼ã¨ã—ã¦ã¯ã¤ãªãŒã‚‰ãªã„ãŒã€ã›ã‚ã¦detachã™ã‚‹ */
 	&push_pu_text("#pink:continue;\n");
 	&push_pu_text("detach\n");
-	$current_path->break(1);   #/* break‚Æ“¯—lA“¯ˆêPATH“à‚Å‚Ícontinue•¶‚ÌŒã‚ë‚É“’B‚µ‚È‚¢igoto label‚ğg‚í‚È‚¢ŒÀ‚èj */
+	$current_path->break(1);   #/* breakã¨åŒæ§˜ã€åŒä¸€PATHå†…ã§ã¯continueæ–‡ã®å¾Œã‚ã«åˆ°é”ã—ãªã„ï¼ˆgoto labelã‚’ä½¿ã‚ãªã„é™ã‚Šï¼‰ */
 
 	return $loop;
 }
@@ -3714,7 +3778,7 @@ sub analyze_return
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* return•¶ */
+	#/* returnæ–‡ */
 #	print "analyze_return : $loop, @local_array\n";
 	analyze_formula_text(1, @local_array[($loop + 1)..(@local_array - 1)]);
 	my $ret_val = "";
@@ -3749,12 +3813,12 @@ sub analyze_switch
 	my @local_array = @{$current_sentence->words};
 	my $condition = "";
 
-	#/* switch•¶ */
+	#/* switchæ–‡ */
 	($loop+1 < @local_array) or die "strange switch sentence!\n";
 
 	if ($local_array[$loop+1] ne "(")
 	{
-		#/* switch‚ÌŒã‚É()‚ª—ˆ‚È‚¢Bƒ}ƒNƒg‚Á‚Ä‚¢‚é‚â‚Â */
+		#/* switchã®å¾Œã«()ãŒæ¥ãªã„ã€‚ãƒã‚¯ãƒ­ä½¿ã£ã¦ã„ã‚‹ã‚„ã¤ */
 #		print "strange if sentence!\n";
 		$loop++;
 		$condition = $local_array[$loop];
@@ -3765,18 +3829,35 @@ sub analyze_switch
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
-			#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Äˆ—Œp‘±‚·‚é */
+			#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 			$current_sentence->clear(0);
 			$current_sentence->position($_[0]);
 			return @local_array - 1;
 		}
 
-		#/* ˆê”ÔŠO‚Ì()‚Íæ‚èœ‚­ */
+		#/* ä¸€ç•ªå¤–ã®()ã¯å–ã‚Šé™¤ã */
 		$condition =~ s/^\((.+)\)$/$1/;
 	}
 
 	$current_sentence->switch_val("(" . $condition . ")");
-	&push_pu_text("partition \"switch - case\" {\n");
+
+	my $tmp_comment = " ";
+	if ($pick_comment_to_pu)
+	{
+		$tmp_comment = &pop_comment_for_pu();
+	}
+
+	if ($tmp_comment ne " ")
+	{
+		$tmp_comment = "partition \"" . $tmp_comment . "\\nswitch - case\" {\n";
+	}
+	else
+	{
+		$tmp_comment = "partition \"switch - case\" {\n";
+	}
+
+#	&push_pu_text("partition \"switch - case\" {\n");
+	&push_pu_text($tmp_comment);
 	&create_new_path("switch");
 #	printf "switch : %s\n", $current_sentence->switch_val;
 	return $loop;
@@ -3789,12 +3870,12 @@ sub analyze_for
 	my @local_array = @{$current_sentence->words};
 
 #	print "analyze for! : @local_array\n";
-	#/* for•¶ */
+	#/* foræ–‡ */
 	my $init_condition;
 	my $repeat_condition;
 	my $pre_repeat_exec;
 
-	#/* ‰Šú‰»ğŒ */
+	#/* åˆæœŸåŒ–æ¡ä»¶ */
 	$init_condition = "";
 	$loop += 2;
 	while ($local_array[$loop] ne ";")
@@ -3804,7 +3885,7 @@ sub analyze_for
 	}
 
 
-	#/* ÀsğŒ */
+	#/* å®Ÿè¡Œæ¡ä»¶ */
 	$repeat_condition = "";
 	$loop += 1;
 	while ($local_array[$loop] ne ";")
@@ -3813,7 +3894,7 @@ sub analyze_for
 		$loop++;
 	}
 
-	#/* ŒJ‚è•Ô‚µˆ— */
+	#/* ç¹°ã‚Šè¿”ã—å‡¦ç† */
 	$pre_repeat_exec = "";
 	$loop += 1;
 	while ($local_array[$loop] ne ")")
@@ -3824,7 +3905,23 @@ sub analyze_for
 
 #	print "for ($init_condition  $repeat_condition  $pre_repeat_exec)\n";
 
-	&push_pu_text("partition \"for loop\" {\n");
+	my $tmp_comment = " ";
+	if ($pick_comment_to_pu)
+	{
+		$tmp_comment = &pop_comment_for_pu();
+	}
+
+	if ($tmp_comment ne " ")
+	{
+		$tmp_comment = "partition \"" . $tmp_comment . "\\nfor loop\" {\n";
+	}
+	else
+	{
+		$tmp_comment = "partition \"for loop\" {\n";
+	}
+
+#	&push_pu_text("partition \"for loop\" {\n");
+	&push_pu_text($tmp_comment);
 	if ($init_condition ne "")
 	{
 		&push_pu_text(":$init_condition]\n");
@@ -3849,7 +3946,7 @@ sub analyze_while
 	my $condition = "";
 
 
-	#/* while•¶ */
+	#/* whileæ–‡ */
 #	print "analyze while!F $loop, @local_array\n";
 	($loop+1 < @local_array) or die "strange while sentence!\n";
 
@@ -3857,7 +3954,7 @@ sub analyze_while
 	{
 		if ($local_array[@local_array - 1] ne ";")
 		{
-			#/* ƒZƒ~ƒRƒƒ“‚ªŸs‚Ìê‡‚ÍA‚¿‰z‚· */
+			#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ãŒæ¬¡è¡Œã®å ´åˆã¯ã€æŒã¡è¶Šã™ */
 			$current_sentence->clear(0);
 			$current_sentence->position($_[0]);
 			return $loop;
@@ -3866,7 +3963,7 @@ sub analyze_while
 
 	if ($local_array[$loop+1] ne "(")
 	{
-		#/* while‚ÌŒã‚É()‚ª—ˆ‚È‚¢Bƒ}ƒNƒg‚Á‚Ä‚¢‚é‚â‚Â */
+		#/* whileã®å¾Œã«()ãŒæ¥ãªã„ã€‚ãƒã‚¯ãƒ­ä½¿ã£ã¦ã„ã‚‹ã‚„ã¤ */
 		$loop++;
 		$condition = $local_array[$loop];
 	}
@@ -3877,13 +3974,13 @@ sub analyze_while
 		$loop = &analyze_some_bracket($loop + 1, \$condition);
 		if ($condition eq "")
 		{
-			#/* ‹ó•¶‚¾‚Á‚½‚çAŸs‚É‚¿‰z‚µ‚Äˆ—Œp‘±‚·‚é */
+			#/* ç©ºæ–‡ã ã£ãŸã‚‰ã€æ¬¡è¡Œã«æŒã¡è¶Šã—ã¦å‡¦ç†ç¶™ç¶šã™ã‚‹ */
 			$current_sentence->clear(0);
 			$current_sentence->position($_[0]);
 			return @local_array - 1;
 		}
 
-		#/* ˆê”ÔŠO‚Ì()‚Íæ‚èœ‚­ */
+		#/* ä¸€ç•ªå¤–ã®()ã¯å–ã‚Šé™¤ã */
 		$condition =~ s/^\((.+)\)$/$1/;
 	}
 
@@ -3891,7 +3988,7 @@ sub analyze_while
 	{
 		if ($loop+1 == @local_array)
 		{
-			#/* ƒZƒ~ƒRƒƒ“‚ªŸs‚Ìê‡‚ÍA‚¿‰z‚· */
+			#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ãŒæ¬¡è¡Œã®å ´åˆã¯ã€æŒã¡è¶Šã™ */
 			$current_sentence->clear(0);
 			$current_sentence->position($_[0]);
 			return $loop;
@@ -3903,13 +4000,30 @@ sub analyze_while
 		&push_pu_text("repeat while (" . CONT_SIZE . $condition . ") is (" . CONT_SIZE . "Yes) not (" . CONT_SIZE . "No)\n");
 		&push_pu_text("}\n");
 
-		#/* e‚ÌÀsPATH‚É•œ‹A‚·‚é */
+		#/* è¦ªã®å®Ÿè¡ŒPATHã«å¾©å¸°ã™ã‚‹ */
 		&return_parent_path();
 		$loop = &analyze_semicolon($loop);
 	}
 	else
 	{
-		&push_pu_text("partition \"while loop\" {\n");
+		my $tmp_comment = " ";
+		if ($pick_comment_to_pu)
+		{
+			$tmp_comment = &pop_comment_for_pu();
+		}
+
+		if ($tmp_comment ne " ")
+		{
+			$tmp_comment = "partition \"" . $tmp_comment . "\\nwhile loop\" {\n";
+		}
+		else
+		{
+			$tmp_comment = "partition \"while loop\" {\n";
+		}
+
+#		&push_pu_text("partition \"while loop\" {\n");
+		&push_pu_text($tmp_comment);
+
 		&push_pu_text("while (" . CONT_SIZE . $condition . ") is (" . CONT_SIZE . "Yes)\n");
 		&create_new_path("while");
 	}
@@ -3923,12 +4037,12 @@ sub analyze_else
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* else•¶ */
+	#/* elseæ–‡ */
 #	if ( ($loop + 1 >= @local_array) ||
 #	     ($local_array[$loop + 1] ne "if") )
 	if ($loop + 1 >= @local_array)
 	{
-		#/* else•¶‚Ìˆ— : ÅŒã‚É’Ç‰Á‚³‚ê‚Ä‚¢‚é‚Å‚ ‚ë‚¤endif‚ğpop‚µ‚Ä‚µ‚Ü‚¤ */
+		#/* elseæ–‡ã®å‡¦ç† : æœ€å¾Œã«è¿½åŠ ã•ã‚Œã¦ã„ã‚‹ã§ã‚ã‚ã†endifã‚’popã—ã¦ã—ã¾ã† */
 #		print "analyze else!\n";
 		pop @{$current_path->pu_text};
 		pop @{$current_path->pu_text};
@@ -3954,16 +4068,16 @@ sub analyze_default
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* default•¶ */
+	#/* defaultæ–‡ */
 	my $broke = 0;
 
-	#/* ‚·‚Å‚Écase•¶‚É“ü‚Á‚Ä‚¢‚éê‡‚ÍAeƒpƒX‚É•œ‹A */
+	#/* ã™ã§ã«caseæ–‡ã«å…¥ã£ã¦ã„ã‚‹å ´åˆã¯ã€è¦ªãƒ‘ã‚¹ã«å¾©å¸° */
 	if ($current_path->type eq "case")
 	{
 		$broke = $current_path->break;
 		if ($broke == 0)
 		{
-			#/* fall through‚µ‚Ä‚­‚éƒP[ƒX */
+			#/* fall throughã—ã¦ãã‚‹ã‚±ãƒ¼ã‚¹ */
 			&push_pu_text(":fall through}\n");
 			&push_pu_text("detach\n");
 		}
@@ -3985,7 +4099,7 @@ sub analyze_default
 #	printf "inc case count %d\n", $current_path->case_count;
 	if ($current_path->case_count == 1)
 	{
-		#/* ‚¢‚«‚È‚èdefault•¶‚ª—ˆ‚½ê‡ */
+		#/* ã„ããªã‚Šdefaultæ–‡ãŒæ¥ãŸå ´åˆ */
 		my $switch_val = $current_path->switch_val;
 
 		$current_sentence->case_cond("if (". CONT_SIZE ."switch $switch_val) then (default)\n");
@@ -4006,16 +4120,16 @@ sub analyze_case
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* case•¶ */
+	#/* caseæ–‡ */
 	my $broke = 0;
-	#/* ‚·‚Å‚Écase, default•¶‚É“ü‚Á‚Ä‚¢‚éê‡‚ÍAeƒpƒX‚É•œ‹A */
+	#/* ã™ã§ã«case, defaultæ–‡ã«å…¥ã£ã¦ã„ã‚‹å ´åˆã¯ã€è¦ªãƒ‘ã‚¹ã«å¾©å¸° */
 	if ( ($current_path->type eq "case") ||
 	     ($current_path->type eq "default") )
 	{
 		$broke = $current_path->break;
 		if ($broke == 0)
 		{
-			#/* fall through‚µ‚Ä‚­‚éƒP[ƒX */
+			#/* fall throughã—ã¦ãã‚‹ã‚±ãƒ¼ã‚¹ */
 			&push_pu_text(":fall through}\n");
 			&push_pu_text("detach\n");
 		}
@@ -4026,7 +4140,7 @@ sub analyze_case
 
 	if ($current_path->type ne "switch")
 	{
-		#/* –{“–‚Íif •ªŠò‚µ‚½’†‚Æ‚©Aƒ‹[ƒv‚Ì“r’†‚É‚àcase•¶‚ğ‘‚¯‚¿‚á‚¢‚Ü‚·‚ªA‚»‚ñ‚ÈƒR[ƒh‚Ü‚Å‘Šè‚É‚µ‚Ä‚ç‚ê‚Ü‚¹‚ñI */
+		#/* æœ¬å½“ã¯if åˆ†å²ã—ãŸä¸­ã¨ã‹ã€ãƒ«ãƒ¼ãƒ—ã®é€”ä¸­ã«ã‚‚caseæ–‡ã‚’æ›¸ã‘ã¡ã‚ƒã„ã¾ã™ãŒã€ãã‚“ãªã‚³ãƒ¼ãƒ‰ã¾ã§ç›¸æ‰‹ã«ã—ã¦ã‚‰ã‚Œã¾ã›ã‚“ï¼ */
 		die "strange case label without switch!\n";
 	}
 
@@ -4039,7 +4153,7 @@ sub analyze_case
 
 	if ($current_sentence->case_val =~ /^[^\(]/)
 	{
-		#/* ( ˆÈŠO‚ÅŠJn‚µ‚Ä‚¢‚½‚ç */
+		#/* ( ä»¥å¤–ã§é–‹å§‹ã—ã¦ã„ãŸã‚‰ */
 		$current_sentence->case_val("(" . $current_sentence->case_val . ")");
 #		printf "add case value : %s\n", $current_sentence->case_val;
 	}
@@ -4053,14 +4167,14 @@ sub analyze_case
 	}
 	elsif ($current_path->case_count == 1)
 	{
-		#/* Å‰‚Ìcase•¶ */
+		#/* æœ€åˆã®caseæ–‡ */
 		my $case_text = "if (" . CONT_SIZE . "switch $switch_val) then (" . CONT_SIZE . "case " . $current_sentence->case_val . ")";
 		$current_sentence->case_cond($case_text);
 		&create_new_path("case");
 	}
 	else
 	{
-		#/* 2ŒÂ–ÚˆÈ~‚Ìcase•¶ */
+		#/* 2å€‹ç›®ä»¥é™ã®caseæ–‡ */
 		my $case_text = "elseif () then (" . CONT_SIZE . "case " . $current_sentence->case_val . ")";
 		$current_sentence->case_cond($case_text);
 		&create_new_path("case");
@@ -4070,7 +4184,7 @@ sub analyze_case
 }
 
 
-#/* ƒlƒXƒg‚ğl—¶‚µ‚Ä{}, (), []‚ğˆê‰ò‚ÌƒeƒLƒXƒg‚Æ‚µ‚Ä•Ô‚· */
+#/* ãƒã‚¹ãƒˆã‚’è€ƒæ…®ã—ã¦{}, (), []ã‚’ä¸€å¡Šã®ãƒ†ã‚­ã‚¹ãƒˆã¨ã—ã¦è¿”ã™ */
 sub analyze_some_bracket
 {
 	my $loop         = $_[0];
@@ -4091,7 +4205,7 @@ sub analyze_some_bracket
 #		print "analyze_some_bracket{}, $tmp_pos, $loop\n";
 		$close_bracket = "}";
 
-		#/* typedef’è‹`‚ÌÚ×æ“¾ */
+		#/* typedefå®šç¾©ã®è©³ç´°å–å¾— */
 		if ($current_sentence->typedef)
 		{
 			if ($tmp_def->type eq "enum")
@@ -4133,16 +4247,16 @@ sub analyze_some_bracket
 
 		if ($tmp_pos < $loop)
 		{
-			#/* ‘O‰ñ‰ğÍˆÊ’u‚æ‚èi‚ñ‚Å‚¢‚ê‚Îƒ`ƒFƒbƒN */
+			#/* å‰å›è§£æä½ç½®ã‚ˆã‚Šé€²ã‚“ã§ã„ã‚Œã°ãƒã‚§ãƒƒã‚¯ */
 			if ($typedef_enum)
 			{
 #				print "enum typedef2 : $current_brief : $local_array[$loop]\n";
 				if ($current_sentence->typedef_tag)
 				{
-					#/* $current_sentence->typedef_tag‚ª0‚ÅˆÈŠO‚Æ‚¢‚¤‚±‚Æ‚ÍA’l‚Ì’è‹`‚ª–¾¦‚³‚ê‚Ä‚¢‚é */
+					#/* $current_sentence->typedef_tagãŒ0ã§ä»¥å¤–ã¨ã„ã†ã“ã¨ã¯ã€å€¤ã®å®šç¾©ãŒæ˜ç¤ºã•ã‚Œã¦ã„ã‚‹ */
 					if ($local_array[$loop] eq "(")
 					{
-						#/* ®AƒLƒƒƒXƒg‚È‚Ç‚Å()‚ªo‚Ä‚«‚½‚çƒlƒXƒg‚·‚é */
+						#/* å¼ã€ã‚­ãƒ£ã‚¹ãƒˆãªã©ã§()ãŒå‡ºã¦ããŸã‚‰ãƒã‚¹ãƒˆã™ã‚‹ */
 						$current_sentence->typedef_tag($current_sentence->typedef_tag + 1);
 						$current_sentence->typedef_val($current_sentence->typedef_val . $local_array[$loop])
 					}
@@ -4155,7 +4269,7 @@ sub analyze_some_bracket
 					{
 						if ($current_sentence->typedef_tag == 1)
 						{
-							#/* ()‚ÅƒlƒXƒg‚µ‚Ä‚¢‚È‚¢ó‘Ô‚Å,‚ªo‚Ä‚«‚½‚çenum’lŠm’è */
+							#/* ()ã§ãƒã‚¹ãƒˆã—ã¦ã„ãªã„çŠ¶æ…‹ã§,ãŒå‡ºã¦ããŸã‚‰enumå€¤ç¢ºå®š */
 #							printf("add enum value : %s\n", $current_sentence->typedef_val);
 							push @{$tmp_def->values}, $current_sentence->typedef_val;
 							$current_sentence->typedef_val("");
@@ -4168,7 +4282,7 @@ sub analyze_some_bracket
 					}
 					elsif ($local_array[$loop] eq "}")
 					{
-						#/* }‚ª—ˆ‚½‚çenum’è‹`I—¹‚È‚Ì‚ÅAenum’lŠm’è */
+						#/* }ãŒæ¥ãŸã‚‰enumå®šç¾©çµ‚äº†ãªã®ã§ã€enumå€¤ç¢ºå®š */
 #						printf("add enum value : %s\n", $current_sentence->typedef_val);
 						push @{$tmp_def->values}, $current_sentence->typedef_val;
 						$current_sentence->typedef_val("");
@@ -4210,7 +4324,7 @@ sub analyze_some_bracket
 				print "struct typedef : $current_brief : $local_array[$loop]\n";
 				if ($local_array[$loop] =~ /^(struct|union)/)
 				{
-					#/* \‘¢‘Ì‚Ì’†‚É’¼Ústruct/union‚ğ‘‚¢‚¿‚á‚¤ƒpƒ^[ƒ“ */
+					#/* æ§‹é€ ä½“ã®ä¸­ã«ç›´æ¥struct/unionã‚’æ›¸ã„ã¡ã‚ƒã†ãƒ‘ã‚¿ãƒ¼ãƒ³ */
 					my $tmp_comment = &pop_comment(0, 1);
 					print "$1 in struct! $tmp_comment\n";
 					push @{$tmp_def->values}, " ";
@@ -4232,31 +4346,31 @@ sub analyze_some_bracket
 						my $tmp_comment = "";
 						if ($current_sentence->typedef_val =~ /(.+)\s([^\s]+)( \: [0-9]+)$/)
 						{
-							#/* ƒrƒbƒgƒtƒB[ƒ‹ƒh‚ğŠÜ‚Ş’è‹` */
+							#/* ãƒ“ãƒƒãƒˆãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã‚’å«ã‚€å®šç¾© */
 							$tmp_value = $1 . $3;
 							$tmp_member = $2;
 						}
 						elsif ($current_sentence->typedef_val =~ /([^\s]+)( \: [0-9]+)$/)
 						{
-							#/* –³–¼‚ÌƒrƒbƒgƒtƒB[ƒ‹ƒh */
+							#/* ç„¡åã®ãƒ“ãƒƒãƒˆãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ */
 							$tmp_value = $1 . $2;
 							$tmp_member = " ";
 						}
 						elsif ($current_sentence->typedef_val =~ /(.+)\s(.+\s\[ .+ \])$/)
 						{
-							#/* ”z—ñ‚Ìƒƒ“ƒo[ */
+							#/* é…åˆ—ã®ãƒ¡ãƒ³ãƒãƒ¼ */
 							$tmp_value = $1;
 							$tmp_member = $2;
 						}
 						elsif ($current_sentence->typedef_val =~ /(.+)\s(\( \* .+ \))$/)
 						{
-							#/* ŠÖ”ƒ|ƒCƒ“ƒ^‚Ìƒƒ“ƒo[ */
+							#/* é–¢æ•°ãƒã‚¤ãƒ³ã‚¿ã®ãƒ¡ãƒ³ãƒãƒ¼ */
 							$tmp_value = $1;
 							$tmp_member = $2;
 						}
 						elsif ($current_sentence->typedef_val =~ /(.+)\s([^\s]+)$/)
 						{
-							#/* ’Êí‚Ìƒƒ“ƒo[’è‹` */
+							#/* é€šå¸¸ã®ãƒ¡ãƒ³ãƒãƒ¼å®šç¾© */
 							$tmp_value = $1;
 							$tmp_member = $2;
 						}
@@ -4269,8 +4383,8 @@ sub analyze_some_bracket
 							}
 							else
 							{
-								#/* struct‚É–¼‘O‚Â‚¯‚ç‚ê‚½ê‡A‚¿‚å‚Á‚Æ‚¨èã‚°‚È‚Ì‚ÅA–³‹‚·‚é */
-								$current_sentence->typedef_pos($loop);    #/* typedef‚Ì‰ğÍˆÊ’u‚ÍŠo‚¦‚Ä‚¨‚­ */
+								#/* structã«åå‰ã¤ã‘ã‚‰ã‚ŒãŸå ´åˆã€ã¡ã‚‡ã£ã¨ãŠæ‰‹ä¸Šã’ãªã®ã§ã€ç„¡è¦–ã™ã‚‹ */
+								$current_sentence->typedef_pos($loop);    #/* typedefã®è§£æä½ç½®ã¯è¦šãˆã¦ãŠã */
 								$loop++;
 								next;
 							}
@@ -4295,17 +4409,17 @@ sub analyze_some_bracket
 				}
 				elsif ($local_array[$loop] eq ":" )
 				{
-					#/* ƒrƒbƒgƒtƒB[ƒ‹ƒh‚Ì’è‹` */
+					#/* ãƒ“ãƒƒãƒˆãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã®å®šç¾© */
 					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
 				}
 				elsif ($local_array[$loop] =~ /^([\[\]\*\(\)\+\-\/])/)
 				{
-					#/* ƒ|ƒCƒ“ƒ^A”z—ñ‚Ì’è‹`A‚»‚Ì‘¼”z—ñ’è‹`‚Ì’†‚Å‚Æ‚è‚¤‚é‰‰Z‹L†i‘½•ªA”²‚¯˜R‚ê‚ ‚èj */
+					#/* ãƒã‚¤ãƒ³ã‚¿ã€é…åˆ—ã®å®šç¾©ã€ãã®ä»–é…åˆ—å®šç¾©ã®ä¸­ã§ã¨ã‚Šã†ã‚‹æ¼”ç®—è¨˜å·ï¼ˆå¤šåˆ†ã€æŠœã‘æ¼ã‚Œã‚ã‚Šï¼‰ */
 					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
 				}
 				elsif ($local_array[$loop] =~ /([0-9]+)/)
 				{
-					#/* ƒrƒbƒgƒtƒB[ƒ‹ƒh‚Ì’è‹` */
+					#/* ãƒ“ãƒƒãƒˆãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã®å®šç¾© */
 					$current_sentence->typedef_val(&add_word_to_text($current_sentence->typedef_val, $local_array[$loop]))
 				}
 				else
@@ -4315,7 +4429,7 @@ sub analyze_some_bracket
 				}
 			}
 
-			$current_sentence->typedef_pos($loop);    #/* typedef‚Ì‰ğÍˆÊ’u‚ÍŠo‚¦‚Ä‚¨‚­ */
+			$current_sentence->typedef_pos($loop);    #/* typedefã®è§£æä½ç½®ã¯è¦šãˆã¦ãŠã */
 		}
 
 		if ($nest == 0)
@@ -4332,7 +4446,7 @@ sub analyze_some_bracket
 	}
 	else
 	{
-		#/* ƒlƒXƒg‚ª•Â‚¶‚«‚Á‚Ä‚¢‚È‚©‚Á‚½‚ç‹ó•¶‚ğ•Ô‚·B‰ğÍˆÊ’u‚ài‚ß‚È‚¢ */
+		#/* ãƒã‚¹ãƒˆãŒé–‰ã˜ãã£ã¦ã„ãªã‹ã£ãŸã‚‰ç©ºæ–‡ã‚’è¿”ã™ã€‚è§£æä½ç½®ã‚‚é€²ã‚ãªã„ */
 		$$ref_out_text = "";
 		$loop = $_[0];
 	}
@@ -4355,13 +4469,13 @@ sub analyze_colon
 	my $label_num = &add_array_no_duplicate($current_function->label ,$label_name);
 	my $color = &get_color_text($label_num);
 	&push_pu_text("$color:**$label_name**;\n");
-	$current_path->break(0);   #/* ƒ‰ƒxƒ‹‚ª“\‚ç‚ê‚é‚ÆA“’B•s‰Â”\ƒR[ƒh‚Å‚Í‚È‚­‚È‚é */
+	$current_path->break(0);   #/* ãƒ©ãƒ™ãƒ«ãŒè²¼ã‚‰ã‚Œã‚‹ã¨ã€åˆ°é”ä¸å¯èƒ½ã‚³ãƒ¼ãƒ‰ã§ã¯ãªããªã‚‹ */
 
 	return $loop;
 }
 
 
-#/* ƒZƒ~ƒRƒƒ“ */
+#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ */
 sub analyze_semicolon
 {
 	my $loop        = $_[0];
@@ -4371,7 +4485,7 @@ sub analyze_semicolon
 #	print "analyze semicolon ($path_type) $loop, @local_array\n";
 	if ($loop + 1 != @local_array)
 	{
-		#/* •¶‚Ì“r’†‚Åo‚Ä‚­‚éƒZƒ~ƒRƒƒ“‚Í–³‹B(‚¨‚»‚ç‚­‚Í\‘¢‘Ì‚Ö‚ÌƒLƒƒƒXƒg) */
+		#/* æ–‡ã®é€”ä¸­ã§å‡ºã¦ãã‚‹ã‚»ãƒŸã‚³ãƒ­ãƒ³ã¯ç„¡è¦–ã€‚(ãŠãã‚‰ãã¯æ§‹é€ ä½“ã¸ã®ã‚­ãƒ£ã‚¹ãƒˆ) */
 		&add_free_word($local_array[$loop]);
 		return $loop;
 	}
@@ -4381,14 +4495,14 @@ sub analyze_semicolon
 		&add_free_word("\n");
 	}
 
-	#/* if•¶‚È‚Ç‚Å{}‚ğg‚í‚È‚¢ƒP[ƒX‚ÍAƒZƒ~ƒRƒƒ“‚ÅƒpƒX•œ‹A‚·‚é */
+	#/* ifæ–‡ãªã©ã§{}ã‚’ä½¿ã‚ãªã„ã‚±ãƒ¼ã‚¹ã¯ã€ã‚»ãƒŸã‚³ãƒ­ãƒ³ã§ãƒ‘ã‚¹å¾©å¸°ã™ã‚‹ */
 	if ($current_path->indent == $global_data->indent)
 	{
 		if ( ($path_type ne "case") &&
 			($path_type ne "default") && 
 			($path_type ne "do") )
 		{
-			#/* e‚ÌÀsPATH‚É•œ‹A‚·‚é */
+			#/* è¦ªã®å®Ÿè¡ŒPATHã«å¾©å¸°ã™ã‚‹ */
 			print "$path_type path without {}! @ " . $global_data->indent . " \n";
 			&return_parent_path();
 		}
@@ -4412,7 +4526,7 @@ sub analyze_bracket_close
 	my $loop        = $_[0];
 	my @local_array = @{$current_sentence->words};
 
-	#/* } •Â‚¶‚é */
+	#/* } é–‰ã˜ã‚‹ */
 	$global_data->indent($global_data->indent - 1);
 	if ($global_data->indent == 0)
 	{
@@ -4424,13 +4538,13 @@ sub analyze_bracket_close
 
 		if ($current_path->break == 0)
 		{
-			#/* break‚µ‚Ä‚È‚¢‚Æ‚¢‚¤‚±‚Æ‚ÍAreturn•¶‚ÌŒã‚ë‚Å‚Í‚È‚¢I */
+			#/* breakã—ã¦ãªã„ã¨ã„ã†ã“ã¨ã¯ã€returnæ–‡ã®å¾Œã‚ã§ã¯ãªã„ï¼ */
 			&push_pu_text("stop\n");
 		}
 	}
 	elsif ($current_path->indent == $global_data->indent)
 	{
-		#/* do ` while•¶ˆÈŠO‚ÍAe‚ÌÀsƒpƒX‚É•œ‹A‚·‚é */
+		#/* do ï½ whileæ–‡ä»¥å¤–ã¯ã€è¦ªã®å®Ÿè¡Œãƒ‘ã‚¹ã«å¾©å¸°ã™ã‚‹ */
 		if ($current_path->type ne "do")
 		{
 			&return_parent_path();
@@ -4441,7 +4555,7 @@ sub analyze_bracket_close
 		my $path_type = $current_path->type;
 		&pop_path();
 
-		#/* ‚±‚±‚É—ˆ‚é‚Ì‚Íswitch ` case•¶‚Ì‚İ */
+		#/* ã“ã“ã«æ¥ã‚‹ã®ã¯switch ï½ caseæ–‡ã®ã¿ */
 		if ( ($path_type eq "case") ||
 		     ($path_type eq "default") )
 		{
@@ -4476,7 +4590,7 @@ sub analyze_bracket_close
 }
 
 
-#/* ŠÖ”“à‚Ì•¶‚Ìí—Ş‚ğæ“ª2Œê‚Å”»•Ê‚·‚é */
+#/* é–¢æ•°å†…ã®æ–‡ã®ç¨®é¡ã‚’å…ˆé ­2èªã§åˆ¤åˆ¥ã™ã‚‹ */
 sub analyze_function_sentence_type
 {
 	my @local_array = @{$current_sentence->words};
@@ -4514,19 +4628,19 @@ sub analyze_function_sentence_type
 	{
 		if (@local_array <= 1)
 		{
-			#/* Ÿs‚É‚¿‰z‚µ */
+			#/* æ¬¡è¡Œã«æŒã¡è¶Šã— */
 			$current_sentence->clear(0);
 			return SENTENCE_FORMULA;
 		}
 
 		if ($local_array[1] eq ":")
 		{
-			#/* ƒ‰ƒxƒ‹‚Ìê‡ */
+			#/* ãƒ©ãƒ™ãƒ«ã®å ´åˆ */
 			return SENTENCE_FORMULA;
 		}
 		elsif (check_typedefs($word))
 		{
-			#/* Šù’m‚ÌŒ^‚Ìê‡ */
+			#/* æ—¢çŸ¥ã®å‹ã®å ´åˆ */
 			return SENTENCE_DECLARE;
 		}
 
@@ -4538,7 +4652,7 @@ sub analyze_function_sentence_type
 }
 
 
-#/* ŠÖ”“à‚Ì2Œê–Ú‚Ì‰ğÍ */
+#/* é–¢æ•°å†…ã®2èªç›®ã®è§£æ */
 sub analyze_function_second_word
 {
 	my $word = $_[0];
@@ -4568,7 +4682,7 @@ sub analyze_function_second_word
 }
 
 
-#/* ŠÖ”“à‚ÌéŒ¾•¶‚Ì‰ğÍ */
+#/* é–¢æ•°å†…ã®å®£è¨€æ–‡ã®è§£æ */
 sub analyze_declare_sentence
 {
 	my $loop = 0;
@@ -4577,7 +4691,7 @@ sub analyze_declare_sentence
 	$loop = &analyze_global_first_word($loop);
 	if ($current_sentence->typ_fixed == 0)
 	{
-		#/* ƒZƒ~ƒRƒƒ“‚¾‚¯‚Ì‹ó•¶‚Ìê‡A–³‹ */
+		#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ã ã‘ã®ç©ºæ–‡ã®å ´åˆã€ç„¡è¦– */
 		($loop == 1) or die "strange declare sentence! $loop, @local_array\n";
 		return;
 	}
@@ -4593,7 +4707,7 @@ sub analyze_declare_sentence
 	return $loop;
 }
 
-#/* ŠÖ”“à‚ÌéŒ¾•¶‚Ì1s‰ğÍ */
+#/* é–¢æ•°å†…ã®å®£è¨€æ–‡ã®1è¡Œè§£æ */
 sub analyze_declare_line
 {
 	my $loop;
@@ -4603,7 +4717,7 @@ sub analyze_declare_line
 	$current_sentence->clear(0);
 	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
-		#/* •¶––‚ÌƒZƒ~ƒRƒƒ“‚ğŒ©‚Â‚¯‚é */
+		#/* æ–‡æœ«ã®ã‚»ãƒŸã‚³ãƒ­ãƒ³ã‚’è¦‹ã¤ã‘ã‚‹ */
 		if ($local_array[$loop] eq ";")
 		{
 			if ($nest == 0)
@@ -4624,7 +4738,7 @@ sub analyze_declare_line
 }
 
 
-#/* ®‚Ì‰ğÍ */
+#/* å¼ã®è§£æ */
 sub analyze_formula_text
 {
 	my ($is_control, @texts) = @_;
@@ -4703,7 +4817,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(void|char|int|short|long|float|double|struct|union|enum|typedef|static|extern|inline|const|volatile|unsigned|signed|auto)$/)
 		{
-			#/* ®‚Å‚±‚Ì‚ ‚½‚è‚Ìƒ[ƒh‚ª“ü‚éê‡‚ÍƒLƒƒƒXƒg‚Æ‚©‚È‚Ì‚ÅA–³‹ */
+			#/* å¼ã§ã“ã®ã‚ãŸã‚Šã®ãƒ¯ãƒ¼ãƒ‰ãŒå…¥ã‚‹å ´åˆã¯ã‚­ãƒ£ã‚¹ãƒˆã¨ã‹ãªã®ã§ã€ç„¡è¦– */
 			$type = 1;
 			if (0 == $is_control)
 			{
@@ -4712,7 +4826,7 @@ sub analyze_formula_text
 		}
 		elsif (check_typedefs($texts[$loop]))
 		{
-			#/* Šù’m‚ÌŒ^ */
+			#/* æ—¢çŸ¥ã®å‹ */
 			if ($sizeof == 1)
 			{
 				$sizeof = 0;
@@ -4729,7 +4843,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\.|\-\>)$/)
 		{
-			#/* \‘¢‘Ì‚Ö‚ÌƒAƒNƒZƒX */
+			#/* æ§‹é€ ä½“ã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ */
 			($current_sentence->rvalue ne "") or die "strange dot or arrow1\n";
 			($type == 0) or die "strange dot or arrow2\n";
 			$current_sentence->rvalue($current_sentence->rvalue . $1);
@@ -4743,7 +4857,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\=|\+\=|\-\=|\*\=|\/\=|\%\=|\&\=|\|\=|\^\=|\<\<\=|\>\>\=)$/)
 		{
-			#/* ‘ã“ü‰‰Zq */
+			#/* ä»£å…¥æ¼”ç®—å­ */
 			$func = 0;
 			($current_sentence->rvalue ne "") or die "strange Substitution formula1\n";
 			($type == 0) or die "strange Substitution formula2\n";
@@ -4754,7 +4868,7 @@ sub analyze_formula_text
 
 			if (@structs > 0)
 			{
-				#/* \‘¢‘Ìƒƒ“ƒo[‚ÌQÆ */
+				#/* æ§‹é€ ä½“ãƒ¡ãƒ³ãƒãƒ¼ã®å‚ç…§ */
 				if (check_global_variable($structs[0])) 
 				{
 					my $tmp = "";
@@ -4762,7 +4876,7 @@ sub analyze_formula_text
 					foreach my $tmp (@structs) {$ref = $ref . $tmp;}
 					$ref = $ref . $value;
 					printf "in %s : add write struct $ref\n", $current_function->name;
-					add_array_no_duplicate($current_function->var_write ,$structs[0]);   #/* ‘‚«‚İ‚Íƒƒ“ƒo[•t‚«‚Ìó‘Ô‚Å‚µ‚©“o˜^‚³‚ê‚È‚¢‚Ì‚ÅA\‘¢‘Ì–¼‚àˆê‚É“o˜^‚·‚é */
+					add_array_no_duplicate($current_function->var_write ,$structs[0]);   #/* æ›¸ãè¾¼ã¿ã¯ãƒ¡ãƒ³ãƒãƒ¼ä»˜ãã®çŠ¶æ…‹ã§ã—ã‹ç™»éŒ²ã•ã‚Œãªã„ã®ã§ã€æ§‹é€ ä½“åã‚‚ä¸€ç·’ã«ç™»éŒ²ã™ã‚‹ */
 					add_array_no_duplicate($current_function->var_write ,$ref);
 				}
 			}
@@ -4780,12 +4894,12 @@ sub analyze_formula_text
 				add_free_word($texts[$loop]);
 			}
 
-			#/* \‘¢‘Ì‚Ìî•ñ‚ğƒŠƒZƒbƒg */
+			#/* æ§‹é€ ä½“ã®æƒ…å ±ã‚’ãƒªã‚»ãƒƒãƒˆ */
 			@structs = ();
 		}
 		elsif ($texts[$loop] =~ /^(\&|\*)$/)
 		{
-			#/* ‚±‚Ì“ñ‚Â‚Í’P€‚Ìê‡‚Æ“ñ€‚Ìê‡‚ª‚ ‚é‚Ì‚Å—v’ˆÓ */
+			#/* ã“ã®äºŒã¤ã¯å˜é …ã®å ´åˆã¨äºŒé …ã®å ´åˆãŒã‚ã‚‹ã®ã§è¦æ³¨æ„ */
 			$func = 0;
 			if (0 == $is_control)
 			{
@@ -4794,7 +4908,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\+\+|\-\-|\!|\~|sizeof)$/)
 		{
-			#/* ’P€‰‰ZqiˆÊ’u‚É’ˆÓj */
+			#/* å˜é …æ¼”ç®—å­ï¼ˆä½ç½®ã«æ³¨æ„ï¼‰ */
 			($type == 0) or die "strange Unary operator $loop, @texts\n";
 			$func = 0;
 			if ($texts[$loop] eq "sizeof")
@@ -4809,7 +4923,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\+|\-|\/|\%|\<\<|\>\>|\&\&|\|\||\&|\||\=\=|\!\=|\^|\>\=|\>|\<\=|\<)$/)
 		{
-			#/* ’Êí‚Ì‰‰Zq */
+			#/* é€šå¸¸ã®æ¼”ç®—å­ */
 			($type == 0) or die "strange operator $loop, @texts\n";
 			$func = 0;
 			if (0 == $is_control)
@@ -4817,12 +4931,12 @@ sub analyze_formula_text
 				add_free_word($texts[$loop]);
 			}
 
-			#/* \‘¢‘Ì‚Ìî•ñ‚ğƒŠƒZƒbƒg */
+			#/* æ§‹é€ ä½“ã®æƒ…å ±ã‚’ãƒªã‚»ãƒƒãƒˆ */
 			@structs = ();
 		}
 		elsif ($texts[$loop] =~ /^(\,)$/)
 		{
-			#/* ƒJƒ“ƒ} */
+			#/* ã‚«ãƒ³ãƒ */
 			($type == 0) or die "strange array operator1 loop = $loop\n";
 			$func = 0;
 			if (0 == $is_control)
@@ -4832,7 +4946,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\[|\])$/)
 		{
-			#/* “Y‚¦š */
+			#/* æ·»ãˆå­— */
 			($type == 0) or die "strange array operator2\n";
 			if (0 == $is_control)
 			{
@@ -4841,7 +4955,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /^(\;)$/)
 		{
-			#/* ƒZƒ~ƒRƒƒ“ */
+			#/* ã‚»ãƒŸã‚³ãƒ­ãƒ³ */
 			if (0 == $is_control)
 			{
 				add_free_word($texts[$loop]);
@@ -4849,7 +4963,7 @@ sub analyze_formula_text
 		}
 		elsif ($texts[$loop] =~ /([_A-Za-z][_A-Za-z0-9]*)/)
 		{
-			#/* ‚Æ‚è‚ ‚¦‚¸ƒVƒ“ƒ{ƒ‹‚ª—ˆ‚½‚çArvalue‚Æ‚µ‚Ä•Û */
+			#/* ã¨ã‚Šã‚ãˆãšã‚·ãƒ³ãƒœãƒ«ãŒæ¥ãŸã‚‰ã€rvalueã¨ã—ã¦ä¿æŒ */
 			if ($sizeof == 1)
 			{
 				$sizeof = 0;
@@ -4864,14 +4978,14 @@ sub analyze_formula_text
 				if ( ($texts[$loop - 1] eq "(") &&
 				     ($texts[$loop + 1] eq ")") )
 				{
-					#/* (symbol)‚Ìê‡AŠù‘¶‚ÌŒ^‚È‚çƒLƒƒƒXƒgA‚»‚¤‚Å‚È‚¯‚ê‚ÎƒVƒ“ƒ{ƒ‹‚ÌQÆ‚¾‚ªAŠî–{“I‚ÉƒLƒƒƒXƒg‚Æ‚İ‚È‚· */
+					#/* (symbol)ã®å ´åˆã€æ—¢å­˜ã®å‹ãªã‚‰ã‚­ãƒ£ã‚¹ãƒˆã€ãã†ã§ãªã‘ã‚Œã°ã‚·ãƒ³ãƒœãƒ«ã®å‚ç…§ã ãŒã€åŸºæœ¬çš„ã«ã‚­ãƒ£ã‚¹ãƒˆã¨ã¿ãªã™ */
 					$func = 0;
 				}
 			}
 
 			if (@structs > 0)
 			{
-				#/* \‘¢‘Ìƒƒ“ƒo[‚ÌQÆ */
+				#/* æ§‹é€ ä½“ãƒ¡ãƒ³ãƒãƒ¼ã®å‚ç…§ */
 #				print "read from struct! $structs[0]\n";
 				if (check_global_variable($structs[0])) 
 				{
@@ -4885,7 +4999,7 @@ sub analyze_formula_text
 			}
 			elsif (check_global_variable($value)) 
 			{
-				#/* •Ï”‚ÌQÆ */
+				#/* å¤‰æ•°ã®å‚ç…§ */
 #				printf "in %s : add read variable $value\n", $current_function->name;
 				add_array_no_duplicate($current_function->var_read ,$value);
 			}
@@ -4898,7 +5012,7 @@ sub analyze_formula_text
 		}
 		else
 		{
-			#/* ‚±‚±‚É—ˆ‚é‚Ì‚Í’¼’l‚¾‚¯‚Ì‚Í‚¸ */
+			#/* ã“ã“ã«æ¥ã‚‹ã®ã¯ç›´å€¤ã ã‘ã®ã¯ãš */
 			if ($sizeof == 1)
 			{
 				$sizeof = 0;
@@ -4915,7 +5029,7 @@ sub analyze_formula_text
 }
 
 
-#/* ®‚Ìs‰ğÍiƒLƒƒƒXƒg‚È‚Ç‚Å‰üs‚ª“ü‚Á‚½ê‡‚ğl—¶j */
+#/* å¼ã®è¡Œè§£æï¼ˆã‚­ãƒ£ã‚¹ãƒˆãªã©ã§æ”¹è¡ŒãŒå…¥ã£ãŸå ´åˆã‚’è€ƒæ…®ï¼‰ */
 sub analyze_formula_line
 {
 	my $loop;
@@ -4924,7 +5038,7 @@ sub analyze_formula_line
 
 	if ($local_array[@local_array - 1] eq ":")
 	{
-		#/* ƒ‰ƒxƒ‹ */
+		#/* ãƒ©ãƒ™ãƒ« */
 		&analyze_colon(@local_array - 1);
 		return;
 	}
@@ -4933,7 +5047,7 @@ sub analyze_formula_line
 	$current_sentence->clear(0);
 	for ($loop = $current_sentence->position; $loop < @local_array; $loop++)
 	{
-		#/* •¶––‚ÌƒZƒ~ƒRƒƒ“‚ğŒ©‚Â‚¯‚é */
+		#/* æ–‡æœ«ã®ã‚»ãƒŸã‚³ãƒ­ãƒ³ã‚’è¦‹ã¤ã‘ã‚‹ */
 		if ($local_array[$loop] eq ";")
 		{
 			if ($nest == 0)
@@ -4955,7 +5069,7 @@ sub analyze_formula_line
 }
 
 
-#/* ŠÖ”“à‚Ì1s‰ğÍ */
+#/* é–¢æ•°å†…ã®1è¡Œè§£æ */
 sub analyze_function_line
 {
 	my $loop;
@@ -4967,7 +5081,7 @@ sub analyze_function_line
 #	&disp_current_words();
 	if (@local_array == 0)
 	{
-		#/* ‹ós */
+		#/* ç©ºè¡Œ */
 		&clear_current_sentence();
 		return;
 	}
@@ -4978,7 +5092,7 @@ sub analyze_function_line
 		$current_sentence->sentence($sentence_type);
 		if ($sentence_type == SENTENCE_CONTROL)
 		{
-			#/* §Œä•¶‚Ìˆ— */
+			#/* åˆ¶å¾¡æ–‡ã®å‡¦ç† */
 			my $func = $analyze_controls{$local_array[0]};
 			&$func(0);
 		}
@@ -5012,11 +5126,11 @@ sub create_new_path
 
 	if ($path_type ne "switch")
 	{
-		#/* switch•¶‚Í•Ö‹XãƒpƒX•ªŠò‚µ‚Ä‚¢‚é‚ªApaths‚ÌƒJƒEƒ“ƒg‚É‚ÍŠÜ‚ß‚È‚¢ */
+		#/* switchæ–‡ã¯ä¾¿å®œä¸Šãƒ‘ã‚¹åˆ†å²ã—ã¦ã„ã‚‹ãŒã€pathsã®ã‚«ã‚¦ãƒ³ãƒˆã«ã¯å«ã‚ãªã„ */
 
 		if (@{$current_path->texts})
 		{
-			#/* caseAdefault‚È‚Ç‚Ì‹ó‚ÌƒpƒX‚ÍƒJƒEƒ“ƒg‚µ‚È‚¢ */
+			#/* caseã€defaultãªã©ã®ç©ºã®ãƒ‘ã‚¹ã¯ã‚«ã‚¦ãƒ³ãƒˆã—ãªã„ */
 			$current_function->paths($current_function->paths+1);
 		}
 	}
@@ -5040,7 +5154,7 @@ sub create_new_path
 }
 
 
-#/* C‰ğÍŒ‹‰Ê‚Ìo—Í */
+#/* Cè§£æçµæœã®å‡ºåŠ› */
 sub output_result
 {
 	my $source_file  = $_[0];
@@ -5074,7 +5188,7 @@ sub output_result
 			my $value = "";
 			
 #			printf "print macro! %s\n", $macro->name;
-			#/* ƒ}ƒNƒˆø”‚ğ˜AŒ‹‚·‚é */
+			#/* ãƒã‚¯ãƒ­å¼•æ•°ã‚’é€£çµã™ã‚‹ */
 			foreach $arg (@{$macro->args})
 			{
 #				printf "print macro arg! %s\n", $arg;
@@ -5218,7 +5332,7 @@ sub output_result
 		}
 	}
 
-	#/* ŠÖ”ƒR[ƒ‹ƒcƒŠ[‚Ìì¬ */
+	#/* é–¢æ•°ã‚³ãƒ¼ãƒ«ãƒ„ãƒªãƒ¼ã®ä½œæˆ */
 	$out_file = $output_fld . "/" . basename($source_file) . "_func_tree.pu";
 	open(OUT_FUNC_TREE,">$out_file")   || die "Can't create func_tree.pu file.\n";
 	printf OUT_FUNC_TREE "\@startmindmap\n";
@@ -5255,7 +5369,7 @@ sub output_result
 }
 
 
-#/* ŠÖ”ŒÄ‚Ño‚µƒcƒŠ[‚Ì¶¬iÄ‹Aj */
+#/* é–¢æ•°å‘¼ã³å‡ºã—ãƒ„ãƒªãƒ¼ã®ç”Ÿæˆï¼ˆå†å¸°ï¼‰ */
 sub make_func_call_tree
 {
 	my $function = $_[0];
@@ -5273,7 +5387,7 @@ sub make_func_call_tree
 		if ( ($level == 2) ||
 		     ($function->static == 1) )
 		{
-			#/* Å‰‚ÌŒÄ‚Ño‚µ‚©A‚ ‚é‚¢‚Í©g‚ªƒXƒ^ƒeƒBƒbƒNŠÖ”‚¾‚Á‚½‚çÄ‹A‚µ‚Ä‚¢‚­ */
+			#/* æœ€åˆã®å‘¼ã³å‡ºã—ã‹ã€ã‚ã‚‹ã„ã¯è‡ªèº«ãŒã‚¹ã‚¿ãƒ†ã‚£ãƒƒã‚¯é–¢æ•°ã ã£ãŸã‚‰å†å¸°ã—ã¦ã„ã */
 			$function->make_tree(1);
 			for ($loop = 0; $loop < $local_func_count; $loop++)
 			{
@@ -5291,7 +5405,7 @@ sub make_func_call_tree
 		}
 		else
 		{
-			#/* ©g‚ªƒOƒ[ƒoƒ‹ŠÖ”‚¾‚Á‚½‚ç‚±‚êˆÈãŒ@‚è‰º‚°‚È‚¢ */
+			#/* è‡ªèº«ãŒã‚°ãƒ­ãƒ¼ãƒãƒ«é–¢æ•°ã ã£ãŸã‚‰ã“ã‚Œä»¥ä¸Šæ˜ã‚Šä¸‹ã’ãªã„ */
 		}
 	}
 	else
@@ -5302,7 +5416,7 @@ sub make_func_call_tree
 }
 
 
-#/* break•¶‚ªswitch‚É‘Î‚µ‚Ä‚©A‚ ‚é‚¢‚Íƒ‹[ƒv‚É‘Î‚µ‚Ä‚©‚ğ”»’è */
+#/* breakæ–‡ãŒswitchã«å¯¾ã—ã¦ã‹ã€ã‚ã‚‹ã„ã¯ãƒ«ãƒ¼ãƒ—ã«å¯¾ã—ã¦ã‹ã‚’åˆ¤å®š */
 sub get_current_break_mode
 {
 	my $path = $current_path;
@@ -5335,7 +5449,7 @@ sub get_current_break_mode
 }
 
 
-#/* puƒeƒLƒXƒg‚Ì’Ç‰Áˆ—iƒCƒ“ƒfƒ“ƒg‚ğ•t‰Á‚·‚éj */
+#/* puãƒ†ã‚­ã‚¹ãƒˆã®è¿½åŠ å‡¦ç†ï¼ˆã‚¤ãƒ³ãƒ‡ãƒ³ãƒˆã‚’ä»˜åŠ ã™ã‚‹ï¼‰ */
 sub push_pu_text
 {
 	my $pu_text = $_[0];
@@ -5348,7 +5462,7 @@ sub push_pu_text
 #	print "push_pu_text : $pu_text";
 	if ($current_path->pu_block ne "")
 	{
-		#/* pu_block‚ÌƒeƒLƒXƒg‚ª—­‚Ü‚Á‚Ä‚¢‚ê‚ÎAæ‚Éo—Í‚·‚é */
+		#/* pu_blockã®ãƒ†ã‚­ã‚¹ãƒˆãŒæºœã¾ã£ã¦ã„ã‚Œã°ã€å…ˆã«å‡ºåŠ›ã™ã‚‹ */
 		if ( ($current_path->break == 1) ||
 		     ($current_path->type eq "switch") )
 		{
@@ -5360,11 +5474,11 @@ sub push_pu_text
 			$block_text = ":" . $current_path->pu_block;
 		}
 
-		#/* ––”ö‚Ì‰üs‚ğƒuƒƒbƒN‚ÌI’[‚É’u‚«Š·‚¦‚é */
+		#/* æœ«å°¾ã®æ”¹è¡Œã‚’ãƒ–ãƒ­ãƒƒã‚¯ã®çµ‚ç«¯ã«ç½®ãæ›ãˆã‚‹ */
 		if ( ($current_path->call_block == 0) ||
 			 ($block_text =~ /\|/) )
 		{
-			#/* ŠÖ”ƒR[ƒ‹‚ğŠÜ‚ŞƒuƒƒbƒN‚Í|‚ğg‚Á‚Ä“ñdü‚ÌƒuƒƒbƒN‚É‚·‚é‚ªA•¶’†‚É|‚ªŠÜ‚Ü‚ê‚Ä‚¢‚éê‡‚ÍAPlantUML‚ªsyntax error‚ğ‹N‚±‚·‚Ì‚Å‰ñ”ğ‚·‚é */
+			#/* é–¢æ•°ã‚³ãƒ¼ãƒ«ã‚’å«ã‚€ãƒ–ãƒ­ãƒƒã‚¯ã¯|ã‚’ä½¿ã£ã¦äºŒé‡ç·šã®ãƒ–ãƒ­ãƒƒã‚¯ã«ã™ã‚‹ãŒã€æ–‡ä¸­ã«|ãŒå«ã¾ã‚Œã¦ã„ã‚‹å ´åˆã¯ã€PlantUMLãŒsyntax errorã‚’èµ·ã“ã™ã®ã§å›é¿ã™ã‚‹ */
 			$block_text =~ s/\n$/]\n/
 		}
 		else
@@ -5385,7 +5499,7 @@ sub push_pu_text
 }
 
 
-#/* qƒpƒX‚É“ü‚è‚È‚¨‚· */
+#/* å­ãƒ‘ã‚¹ã«å…¥ã‚ŠãªãŠã™ */
 sub re_enter_latest_child
 {
 	my $child_path;
@@ -5395,7 +5509,7 @@ sub re_enter_latest_child
 }
 
 
-#/* e‚ÌÀsPATH‚É•œ‹A‚·‚é */
+#/* è¦ªã®å®Ÿè¡ŒPATHã«å¾©å¸°ã™ã‚‹ */
 sub return_parent_path
 {
 	my $path_type = $current_path->type;
@@ -5424,7 +5538,7 @@ sub return_parent_path
 	}
 	elsif ($path_type eq "for")
 	{
-		#/* for•¶‚ÌI‚í‚è‚É‚ÍŒJ‚è•Ô‚µ‘O‚Ìˆ—‚Æendwhile‚ğ‘}“ü‚·‚é */
+		#/* foræ–‡ã®çµ‚ã‚ã‚Šã«ã¯ç¹°ã‚Šè¿”ã—å‰ã®å‡¦ç†ã¨endwhileã‚’æŒ¿å…¥ã™ã‚‹ */
 		if ($backward_text ne "")
 		{
 			&push_pu_text("backward :$backward_text]\n");
@@ -5435,20 +5549,20 @@ sub return_parent_path
 	}
 	elsif ($path_type eq "do")
 	{
-		#/* do while•¶‚Íwhile‚Ì•”•ª‚Åpath‚ğ•Â‚¶‚é‚Ì‚ÅA‚±‚±‚Å‚Í‰½‚à‚µ‚È‚¢ */
+		#/* do whileæ–‡ã¯whileã®éƒ¨åˆ†ã§pathã‚’é–‰ã˜ã‚‹ã®ã§ã€ã“ã“ã§ã¯ä½•ã‚‚ã—ãªã„ */
 	}
 	elsif ($path_type eq "switch")
 	{
 		if ($case_count > 0)
 		{
-			#/* ‚±‚±‚É—ˆ‚é‚Ì‚ÍÅŒã‚Ìcase/default•¶‚É{}‚ª‚Â‚¢‚Ä‚¢‚½ê‡I */
+			#/* ã“ã“ã«æ¥ã‚‹ã®ã¯æœ€å¾Œã®case/defaultæ–‡ã«{}ãŒã¤ã„ã¦ã„ãŸå ´åˆï¼ */
 			print "switch sentence close!!!!\n";
 			&push_pu_text("endif\n");
 			&push_pu_text("}\n");
 		}
 		else
 		{
-			#/* ‚±‚±‚É—ˆ‚é‚Ì‚Ícase‚àdefault‚à‚È‚¢switch•¶I */
+			#/* ã“ã“ã«æ¥ã‚‹ã®ã¯caseã‚‚defaultã‚‚ãªã„switchæ–‡ï¼ */
 			printf "switch sentence with no case or default!!!! case count:%d\n", $current_path->case_count;
 			&push_pu_text("#HotPink:No case or default label!]\n");
 			&push_pu_text("}\n");
@@ -5466,14 +5580,14 @@ sub return_parent_path
 }
 
 
-#/* ŒÄ‚Ño‚µŠÖ”ƒŠƒXƒg‚É’Ç‰Á‚·‚é(d•¡ƒ`ƒFƒbƒN) */
+#/* å‘¼ã³å‡ºã—é–¢æ•°ãƒªã‚¹ãƒˆã«è¿½åŠ ã™ã‚‹(é‡è¤‡ãƒã‚§ãƒƒã‚¯) */
 sub add_function_call
 {
 	my $call_function = $_[0];
 	my $function_listed = "";
 	my $match = 0;
 
-	#/* Œ»İ‚ÌÀsƒpƒX‚ÌŒÄ‚Ño‚µŠÖ”ƒŠƒXƒg‚É’Ç‰Á‚·‚é */
+	#/* ç¾åœ¨ã®å®Ÿè¡Œãƒ‘ã‚¹ã®å‘¼ã³å‡ºã—é–¢æ•°ãƒªã‚¹ãƒˆã«è¿½åŠ ã™ã‚‹ */
 	foreach $function_listed (@{$current_path->func_call})
 	{
 		if ($function_listed eq $call_function)
@@ -5489,7 +5603,7 @@ sub add_function_call
 	}
 
 
-	#/* Œ»İ‚ÌŠÖ”‚ÌŒÄ‚Ño‚µŠÖ”ƒŠƒXƒg‚É’Ç‰Á‚·‚é */
+	#/* ç¾åœ¨ã®é–¢æ•°ã®å‘¼ã³å‡ºã—é–¢æ•°ãƒªã‚¹ãƒˆã«è¿½åŠ ã™ã‚‹ */
 	$match = 0;
 	foreach $function_listed (@{$current_function->func_call})
 	{
@@ -5507,7 +5621,7 @@ sub add_function_call
 }
 
 
-#/* ˆø”‚Åw’è‚µ‚½–¼‘O‚ÌŠÖ”‚ªƒ‚ƒWƒ…[ƒ‹“à‚É‘¶İ‚·‚é‚©A‚µ‚½ê‡‚Í‚»‚ÌƒIƒuƒWƒFƒNƒg‚ğ•Ô‚· */
+#/* å¼•æ•°ã§æŒ‡å®šã—ãŸåå‰ã®é–¢æ•°ãŒãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«å†…ã«å­˜åœ¨ã™ã‚‹ã‹ã€ã—ãŸå ´åˆã¯ãã®ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆã‚’è¿”ã™ */
 sub check_func_name
 {
 	my $name = $_[0];
@@ -5525,7 +5639,7 @@ sub check_func_name
 }
 
 
-#/* typedef‚ÌŒ^’è‹`ƒŠƒXƒg‚ÉŠÜ‚Ü‚ê‚éŒ^‚©‚Ç‚¤‚©‚ğƒ`ƒFƒbƒN‚·‚é */
+#/* typedefã®å‹å®šç¾©ãƒªã‚¹ãƒˆã«å«ã¾ã‚Œã‚‹å‹ã‹ã©ã†ã‹ã‚’ãƒã‚§ãƒƒã‚¯ã™ã‚‹ */
 sub check_typedefs
 {
 	my $name = $_[0];
@@ -5550,7 +5664,7 @@ sub check_typedefs
 }
 
 
-#/* ƒOƒ[ƒoƒ‹•Ï”‚ÉŠÜ‚Ü‚ê‚é‚©‚Ç‚¤‚©‚ğƒ`ƒFƒbƒN‚·‚é */
+#/* ã‚°ãƒ­ãƒ¼ãƒãƒ«å¤‰æ•°ã«å«ã¾ã‚Œã‚‹ã‹ã©ã†ã‹ã‚’ãƒã‚§ãƒƒã‚¯ã™ã‚‹ */
 sub check_global_variable
 {
 	my $variable;
@@ -5575,7 +5689,7 @@ sub check_global_variable
 }
 
 
-#/* ƒ‚ƒWƒ…[ƒ‹“à‚ÌQÆŠÖŒW‚ğŠm”F */
+#/* ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«å†…ã®å‚ç…§é–¢ä¿‚ã‚’ç¢ºèª */
 sub check_reference
 {
 	my $function = $_[0];
@@ -5587,7 +5701,7 @@ sub check_reference
 		$func_refs = &check_func_name($func_name);
 		if ($func_refs ne "")
 		{
-			#/* QÆ‚µ‚Ä‚¢‚éŠÖ”‘¤‚Ì”íQÆŠÖ”‚É’Ç‰Á‚·‚é */
+			#/* å‚ç…§ã—ã¦ã„ã‚‹é–¢æ•°å´ã®è¢«å‚ç…§é–¢æ•°ã«è¿½åŠ ã™ã‚‹ */
 #			printf "func call!!!!!!! [%s]\n", $func_refs->name;
 			push @{$func_refs->func_ref}, $function->name;
 		}
@@ -5595,8 +5709,8 @@ sub check_reference
 }
 
 
-#/* ”z—ñ‚Éd•¡‚ğ”ğ‚¯‚Ä—v‘f‚ğ’Ç‰Á‚·‚é     */
-#/* –ß‚è’l‚Í‚»‚Ì—v‘f‚ÌƒCƒ“ƒfƒbƒNƒX‚ğ•Ô‚· */
+#/* é…åˆ—ã«é‡è¤‡ã‚’é¿ã‘ã¦è¦ç´ ã‚’è¿½åŠ ã™ã‚‹     */
+#/* æˆ»ã‚Šå€¤ã¯ãã®è¦ç´ ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ã‚’è¿”ã™ */
 sub add_array_no_duplicate
 {
 	my ($array, $value) = @_;
@@ -5615,7 +5729,7 @@ sub add_array_no_duplicate
 }
 
 
-#/* goto label—p‚ÌFi4‚ÂˆÈã‚Ìƒ‰ƒxƒ‹‚Ægoto‚ğg‚¤‚æ‚¤‚ÈŠÖ”‚Í‘‚«’¼‚¹I ‚Æ‚¢‚¤å’£j */
+#/* goto labelç”¨ã®è‰²ï¼ˆ4ã¤ä»¥ä¸Šã®ãƒ©ãƒ™ãƒ«ã¨gotoã‚’ä½¿ã†ã‚ˆã†ãªé–¢æ•°ã¯æ›¸ãç›´ã›ï¼ ã¨ã„ã†ä¸»å¼µï¼‰ */
 sub get_color_text
 {
 	my $val = $_[0];
@@ -5640,7 +5754,7 @@ sub get_color_text
 }
 
 
-#/* ˆê‚Â‚ÌÀsPATH‚Ìo—ÍiÄ‹A‚·‚éj */
+#/* ä¸€ã¤ã®å®Ÿè¡ŒPATHã®å‡ºåŠ›ï¼ˆå†å¸°ã™ã‚‹ï¼‰ */
 sub output_path
 {
 	my $path = $_[0];
@@ -5664,7 +5778,7 @@ sub output_path
 		{
 			if ($return_from_child)
 			{
-				#/* qPATH‚©‚ç•œ‹A‚µ‚Äˆ—‚ª‚ ‚éê‡‚ÍŒ³‚ÌƒpƒX‚ğ•\‹L */
+				#/* å­PATHã‹ã‚‰å¾©å¸°ã—ã¦å‡¦ç†ãŒã‚ã‚‹å ´åˆã¯å…ƒã®ãƒ‘ã‚¹ã‚’è¡¨è¨˜ */
 				$return_from_child = 0;
 				if ($path->type ne "switch")
 				{
@@ -5679,7 +5793,7 @@ sub output_path
 }
 
 
-#/* İ’èƒtƒ@ƒCƒ‹‚Ì“Ç‚İ‚İˆ— */
+#/* è¨­å®šãƒ•ã‚¡ã‚¤ãƒ«ã®èª­ã¿è¾¼ã¿å‡¦ç† */
 sub read_setting_file
 {
 	if (!open(SETTING_IN, $setting_file))
