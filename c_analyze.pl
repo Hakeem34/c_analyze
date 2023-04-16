@@ -44,6 +44,7 @@ my $output_temp_text = 0;		#/* 整形したCコードをファイルに出力す
 my $log_file_name = "";         #/* ログファイル名 */
 my $jar_path = "";				#/* JAVAを起動してPUファイルを生成する */
 my $charset_utf = 0;			#/* UTF8指定 */
+my $without_pu_convert = 0;		#/* PUファイル変換無し */
 my $footer_text = "";			#/* puファイルに記載するfooter */
 
 struct GlobalInfo => {
@@ -201,7 +202,7 @@ my $setting_file = "c_analyze_setting.txt";
 my $output_remain = "";
 my @output_lines;
 my @input_lines;
-my $pick_comment_to_pu = 1;
+my $pick_comment_to_pu = 0;
 
 
 #/**********************************/
@@ -379,6 +380,10 @@ sub check_command_line_option
 		elsif ($arg eq "-utf")
 		{
 			$charset_utf = 1;
+		}
+		elsif ($arg eq "-nopu")
+		{
+			$without_pu_convert = 1;
 		}
 		else
 		{
@@ -1709,13 +1714,13 @@ sub line_parse_1st
 		{
 			#/* ; か { か } で終わってない行は、スペース1個空けて連結する */
 #			print "joint $local_line\n";
-#			$line_postpone = "$`$1 ";
+#			$line_postpone = "$`$1 ";              #/* typedef対応のため、行連結を無効化 */
 		}
 
 		if ($local_line =~ /(else)\s*\n/)
 		{
 			#/* elseで終わっている行は、スペース1個空けて連結する */
-			print "joint $local_line\n";
+#			print "joint $local_line\n";
 			$line_postpone = "$`$1 ";
 		}
 		elsif ($local_line =~ /(\?)\s*\n/)
@@ -5320,14 +5325,17 @@ sub output_result
 	{
 		if (0 < @pu_files)
 		{
-			print "do pu convert!!! @pu_files\n";
-			if ($charset_utf)
+			if ($without_pu_convert == 0)
 			{
-				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files -charset UTF-8")
-			}
-			else
-			{
-				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+				print "do pu convert!!! @pu_files\n";
+				if ($charset_utf)
+				{
+					system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files -charset UTF-8")
+				}
+				else
+				{
+					system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path @pu_files")
+				}
 			}
 		}
 	}
@@ -5354,14 +5362,17 @@ sub output_result
 
 	if ($jar_path ne "")
 	{
-		print "do pu convert!!! $out_file\n";
-		if ($charset_utf)
+		if ($without_pu_convert == 0)
 		{
-			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file -charset UTF-8")
-		}
-		else
-		{
-			system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file")
+			print "do pu convert!!! $out_file\n";
+			if ($charset_utf)
+			{
+				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file -charset UTF-8")
+			}
+			else
+			{
+				system("java -DPLANTUML_LIMIT_SIZE=16384 -jar $jar_path $out_file")
+			}
 		}
 	}
 

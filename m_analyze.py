@@ -36,18 +36,21 @@ re_typedef_member   = re.compile(r"^\t\t([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)\n
 
 
 #/* グローバル変数 */
-g_output_fld       = "m_analyze"
-g_setting_file     = "m_analyze_setting.txt"
-g_log_file_name    = ""
-g_output_temp_text = 0
-g_default_log      = 0
-g_target_files     = []
-g_module_name      = "sample"
-g_jar_path         = ""
-g_exec_c_analyze   = 1
-g_charset_utf      = 0
-g_modules          = []
-g_call_tree        = []
+g_output_fld         = "m_analyze"
+g_setting_file       = "m_analyze_setting.txt"
+g_log_file_name      = ""
+g_output_temp_text   = 0
+g_default_log        = 0
+g_target_files       = []
+g_module_name        = "sample"
+g_jar_path           = ""
+g_exec_c_analyze     = 1
+g_charset_utf        = 0
+g_without_pu_convert = 0
+g_modules            = []
+g_call_tree          = []
+g_called_tree        = []
+g_tree_stack         = []
 
 class cMember:
     def __init__(self):
@@ -332,6 +335,27 @@ class cModule:
 
         csv.close();
 
+
+    #/*****************************************************************************/
+    #/* モジュール外からの関数コールを拾う                                        */
+    #/*****************************************************************************/
+    def check_called_func(self):
+        global g_modules
+        for function in self.functions:
+            if (function.is_static):
+                break
+
+            for other_module in g_modules:
+                if (other_module.name == self.name):
+                    continue
+
+                for other_func in other_module.functions:
+                    for call in other_func.func_call:
+                        if (call == function.name):
+                            function.func_called.append(other_func.name)
+
+
+
     #/*****************************************************************************/
     #/* スタティック変数のチェック                                                */
     #/*****************************************************************************/
@@ -392,6 +416,7 @@ def check_command_line_option():
     global g_output_temp_text
     global g_exec_c_analyze
     global g_charset_utf
+    global g_without_pu_convert
 
     argc = len(sys.argv)
     option = ""
@@ -423,6 +448,8 @@ def check_command_line_option():
             g_exec_c_analyze = 0
         elif (arg == "-utf"):
             g_charset_utf = 1
+        elif (arg == "-nopu"):
+            g_without_pu_convert = 1
         elif (arg == "-o"):
             option = "o"
         elif (arg == "-t"):
@@ -449,16 +476,19 @@ def read_setting_file():
     global g_charset_utf
     global g_module_name
     global g_call_tree
+    global g_called_tree
+    global g_jar_path
 
     print("read_setting_file");
     f = open(g_setting_file, 'r')
     lines = f.readlines()
 
-    re_source   = re.compile(r"source\s+(.+)\n")
-    re_jar      = re.compile(r"plantuml[ \t]+([^\s]+)")
-    re_module   = re.compile(r"module_name[ \t]+([^\s]+)")
-    re_charset  = re.compile(r"default_charset[ \t]+([^\s]+)")
-    re_calltree = re.compile(r"calltree[ \t]+([^\s]+)")
+    re_source     = re.compile(r"source\s+(.+)\n")
+    re_jar        = re.compile(r"plantuml[ \t]+([^\s]+)")
+    re_module     = re.compile(r"module_name[ \t]+([^\s]+)")
+    re_charset    = re.compile(r"default_charset[ \t]+([^\s]+)")
+    re_calltree   = re.compile(r"calltree[ \t]+([^\s]+)")
+    re_calledtree = re.compile(r"calledtree[ \t]+([^\s]+)")
 
     for line in lines:
 #       print ("line:%s" % line)
@@ -474,6 +504,9 @@ def read_setting_file():
         elif (result := re_calltree.match(line)):
             print ("calltree : " + result.group(1))
             g_call_tree.append(result.group(1))
+        elif (result := re_calledtree.match(line)):
+            print ("calledtree : " + result.group(1))
+            g_called_tree.append(result.group(1))
         elif (result := re_charset.match(line)):
             print ("charset  : " + result.group(1))
             if (result.group(1) == "UTF8"):
@@ -515,6 +548,7 @@ def log_settings():
 def c_analyze():
     global g_target_files
     global g_charset_utf
+    global g_without_pu_convert
 
     print("c_analyze")
     for source_file in g_target_files:
@@ -527,6 +561,9 @@ def c_analyze():
 
         if (g_charset_utf == 1):
             cmd_text += " -utf"
+
+        if (g_without_pu_convert == 1):
+            cmd_text += " -nopu"
 
         subprocess.run(cmd_text, stdout=sys.stdout)
 
@@ -549,6 +586,9 @@ def module_analyze():
 
     for module in g_modules:
         module.check_static_variable()
+
+    for module in g_modules:
+        module.check_called_func()
 
 
 
@@ -698,11 +738,66 @@ def out_define_list():
 
 
 
+
+
+#/*****************************************************************************/
+#/* Call Tree再帰処理                                                         */
+#/*****************************************************************************/
+def make_call_tree(is_called, level, function, pu_file, module, target_func):
+    global g_tree_stack
+    print("make_call_tree : %s" % function)
+
+    #/* 再帰のチェック */
+    for origin in g_tree_stack:
+        if (origin == function):
+            print("recursive call! : %s" % function)
+            return;
+
+    #/* まずスタックに関数名を積む */
+    g_tree_stack.append(function)
+
+    pu_text = "*" * level + "_ " + function
+    print(pu_text, file= pu_file);
+
+    if (is_called):
+        refer = target_func.func_called
+    else:
+        refer = target_func.func_call
+
+    for next_func_name in refer:
+        print("make_call_tree next : %s" % next_func_name)
+        next_func = module.get_function(next_func_name)
+        if (next_func == None):
+            for other_module in g_modules:
+                if (other_module.name == module.name):
+                    continue
+
+                next_func = other_module.get_function(next_func_name)
+                if (next_func != None):
+                    break
+
+        if (next_func == None):
+            pu_text = "*" * (level + 1) + "_ " + next_func_name + "*"
+            print(pu_text, file= pu_file);
+        else:
+            make_call_tree(is_called, level + 1, next_func_name, pu_file, module, next_func)
+
+    #/* スタックから自身を削除する */
+    g_tree_stack.pop()
+    return
+
+
+
 #/*****************************************************************************/
 #/* Call Tree生成                                                             */
 #/*****************************************************************************/
 def out_call_tree():
     global g_call_tree
+    global g_called_tree
+    global g_output_fld
+    global g_tree_stack
+    global g_jar_path
+    global g_without_pu_convert
     print("out_call_tree")
 
     for target in g_call_tree:
@@ -714,11 +809,47 @@ def out_call_tree():
 
         if (target_func != None):
             print("call tree find : %s" % target)
+            file_path = g_output_fld + "\\" + target + "_call_tree.pu"
+            pu_file = open(file_path, 'w', encoding="utf-8")
+            print("@startmindmap", file= pu_file);
+            make_call_tree(0, 1, target, pu_file, module, target_func)
+            print("@endmindmap", file= pu_file);
+            pu_file.close()
         else:
             print("call tree target not found : %s" % target)
 
-#           for function in module.functions:
-#               if (function.name == target):
+        if (g_jar_path != ""):
+            if (g_without_pu_convert == 0):
+                cmd_text = "java -DPLANTUML_LIMIT_SIZE=16384 -jar " + g_jar_path + " " + file_path + " -charset UTF-8"
+                print(cmd_text)
+                subprocess.run(cmd_text, stdout=sys.stdout)
+
+    for target in g_called_tree:
+        print("called tree : %s" % target)
+        for module in g_modules:
+            target_func = module.get_function(target)
+            if (target_func != None):
+                break
+
+        if (target_func != None):
+            print("called tree find : %s" % target)
+            file_path = g_output_fld + "\\" + target + "_call_tree.pu"
+            pu_file = open(file_path, 'w', encoding="utf-8")
+            print("@startmindmap", file= pu_file);
+            print("left side", file= pu_file);
+            make_call_tree(1, 1, target, pu_file, module, target_func)
+            print("@endmindmap", file= pu_file);
+            pu_file.close()
+        else:
+            print("called tree target not found : %s" % target)
+
+        if (g_jar_path != ""):
+            if (g_without_pu_convert == 0):
+                cmd_text = "java -DPLANTUML_LIMIT_SIZE=16384 -jar " + g_jar_path + " " + file_path + " -charset UTF-8"
+                print(cmd_text)
+                subprocess.run(cmd_text, stdout=sys.stdout)
+
+
 
 
 
