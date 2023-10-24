@@ -51,6 +51,14 @@ g_modules            = []
 g_call_tree          = []
 g_called_tree        = []
 g_tree_stack         = []
+g_tree_depend        = []
+
+
+class cDependency:
+    def __init__(self):
+        self.function    = ""
+        self.stack       = []
+        return
 
 class cMember:
     def __init__(self):
@@ -666,7 +674,7 @@ def out_variable_list():
 
 
 #/*****************************************************************************/
-#/* 変数一覧出力                                                              */
+#/* 定義一覧出力                                                              */
 #/*****************************************************************************/
 def out_define_list():
     wb = openpyxl.Workbook()
@@ -738,6 +746,33 @@ def out_define_list():
 
 
 
+#/*****************************************************************************/
+#/* 関数一覧出力                                                              */
+#/*****************************************************************************/
+def out_function_list():
+    wb = openpyxl.Workbook()
+    ws = wb.worksheets[0]
+    ws.title = "関数一覧"
+
+    row = 2
+    col = 2
+    ws.cell(row, col    ).value = "ファイル名"
+    ws.cell(row, col + 1).value = "type名"
+    ws.cell(row, col + 2).value = "型"
+    ws.cell(row, col + 3).value = "説明"
+
+    row += 1
+    for module in g_modules:
+        for function in module.functions:
+            ws.cell(row, col    ).value = function.ret_type
+            ws.cell(row, col + 1).value = function.name
+            ws.cell(row, col + 2).value = function.name
+            ws.cell(row, col + 3).value = function.name
+            row += 1
+
+
+    out_file_name = g_output_fld + "\\" + g_module_name + "_functions.xlsx"
+    wb.save(out_file_name)
 
 
 #/*****************************************************************************/
@@ -745,6 +780,7 @@ def out_define_list():
 #/*****************************************************************************/
 def make_call_tree(is_called, level, function, pu_file, module, target_func):
     global g_tree_stack
+    global g_tree_depend
     print("make_call_tree : %s" % function)
 
     #/* 再帰のチェック */
@@ -779,6 +815,13 @@ def make_call_tree(is_called, level, function, pu_file, module, target_func):
         if (next_func == None):
             pu_text = "*" * (level + 1) + "_ " + next_func_name + "*"
             print(pu_text, file= pu_file);
+
+            #/* 依存している外部関数の列挙 */
+            dep = cDependency()
+            dep.function = next_func_name
+            for stack in g_tree_stack:
+                dep.stack.append(stack)
+            g_tree_depend.append(dep)
         else:
             make_call_tree(is_called, level + 1, next_func_name, pu_file, module, next_func)
 
@@ -796,6 +839,7 @@ def out_call_tree():
     global g_called_tree
     global g_output_fld
     global g_tree_stack
+    global g_tree_depend
     global g_jar_path
     global g_without_pu_convert
     print("out_call_tree")
@@ -809,12 +853,23 @@ def out_call_tree():
 
         if (target_func != None):
             print("call tree find : %s" % target)
+            g_tree_depend = []
             file_path = g_output_fld + "\\" + target + "_call_tree.pu"
             pu_file = open(file_path, 'w', encoding="utf-8")
             print("@startmindmap", file= pu_file);
             make_call_tree(0, 1, target, pu_file, module, target_func)
             print("@endmindmap", file= pu_file);
             pu_file.close()
+
+            file_path2 = g_output_fld + "\\" + target + "_call_tree_dependency.txt"
+            dep_file = open(file_path2, 'w', encoding="utf-8")
+            print("Dendency in %s call tree" % (target), file= dep_file);
+            for dep in g_tree_depend:
+                text = dep.function
+                while (dep.stack):
+                    text = text + "," + dep.stack.pop()
+                print(text, file= dep_file);
+            dep_file.close()
         else:
             print("call tree target not found : %s" % target)
 
@@ -833,13 +888,24 @@ def out_call_tree():
 
         if (target_func != None):
             print("called tree find : %s" % target)
-            file_path = g_output_fld + "\\" + target + "_call_tree.pu"
+            g_tree_depend = []
+            file_path = g_output_fld + "\\" + target + "_called_tree.pu"
             pu_file = open(file_path, 'w', encoding="utf-8")
             print("@startmindmap", file= pu_file);
             print("left side", file= pu_file);
             make_call_tree(1, 1, target, pu_file, module, target_func)
             print("@endmindmap", file= pu_file);
             pu_file.close()
+
+            file_path2 = g_output_fld + "\\" + target + "called_tree_dependency.txt"
+            dep_file = open(file_path2, 'w', encoding="utf-8")
+            print("Dendency in %s call tree" % (target), file= dep_file);
+            for dep in g_tree_depend:
+                text = dep.function
+                while (dep.stack):
+                    text = text + "," + dep.stack.pop()
+                print(text, file= dep_file);
+            dep_file.close()
         else:
             print("called tree target not found : %s" % target)
 
@@ -869,6 +935,7 @@ def main():
 
     out_variable_list()
     out_define_list()
+    out_function_list()
     out_call_tree()
 
 
