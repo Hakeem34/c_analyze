@@ -1,0 +1,37 @@
+#############################################################################
+# C analyze setting file
+#############################################################################
+
+###################################################
+# plantumlのjarファイルパスを指定してください。
+# 省略した場合は、puファイルの変換を行いません
+
+plantuml C:\tools\plantuml-asl-1.2023.12.jar
+
+
+footer_text none
+
+
+###################################################
+# 解析対象のソースコード外で定義されているマクロを
+# ここで定義することが可能です。￥は使用不可です。
+
+define TRUE  (1)
+define FALSE (0)
+define MS_WINDOWS
+define WITH_DOC_STRINGS 1
+define PyDoc_VAR(name) static const char name[]
+define PyDoc_STRVAR(name,str) PyDoc_VAR(name) = PyDoc_STR(str)
+define PyDoc_STR(str) str
+define Py_RETURN_NONE return Py_None
+
+
+###################################################
+# extractで指定されたマクロは解析前に展開されます。
+# それ以外のマクロは展開されません
+
+extract PyDoc_VAR
+extract PyDoc_STRVAR
+extract PyDoc_STR
+extract Py_RETURN_NONE
+
