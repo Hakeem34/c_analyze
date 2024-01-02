@@ -16,6 +16,12 @@ re_pu_line2    = re.compile(r"^(\s+\:)(.+)\n$")
 re_pu_line3    = re.compile(r"^( +)(.+)([\|\]])\n$")
 re_pu_line4    = re.compile(r"^( +)(.+)\n$")
 
+re_no_diff_line  = re.compile(r"^  (.+)\n$")
+re_minus_line    = re.compile(r"^\- (.+)\n$")
+re_plus_line     = re.compile(r"^\+ (.+)\n$")
+re_question_line = re.compile(r"^\? (.+)\n$")
+re_start_block   = re.compile(r"^\s*\:\n$")
+re_end_block     = re.compile(r"^\s*[\]\|\;]\n$")
 
 #/*****************************************************************************/
 #/* サブディレクトリの生成                                                    */
@@ -149,8 +155,34 @@ def read_diffs(former_path, latter_path):
     output_diff = diff.compare(former_input, latter_input)
 #   output_diff = diff.compare(former_lines, latter_lines)
 #   print('\n'.join(output_diff))
+
+    in_block = 0
+    out_merged = open(g_output_fld + "\\" + "merged.pu", "w")
     for line in output_diff:
         print(line, end="")
+        if (result := re_no_diff_line.match(line)):
+            #/* 差分無しの行 */
+            print(result.group(1), file = out_merged)
+        elif (result := re_plus_line.match(line)):
+            #/* 追加の行 */
+            line = result.group(1)
+            if (result := re_start_block.match(line)):
+                print(":<b>", end="", file = out_merged)
+                in_block = 1
+            elif (result := re_end_block.match(line)):
+                print(result.group(1), file = out_merged)
+                in_block = 0
+            else:
+                if (in_block):
+                    print("<b>" + result.group(1), file = out_merged)
+                else:
+                    print(line, file = out_merged)
+        elif (result := re_minus_line.match(line)):
+            #/* 削除の行 */
+            if (in_block):
+                print("<s>" + result.group(1), file = out_merged)
+            else:
+                print(result.group(1), file = out_merged)
 
     f_former.close()
     f_latter.close()

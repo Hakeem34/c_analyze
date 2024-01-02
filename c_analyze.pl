@@ -202,7 +202,7 @@ my $setting_file = "c_analyze_setting.txt";
 my $output_remain = "";
 my @output_lines;
 my @input_lines;
-my $pick_comment_to_pu = 0;
+my $pick_comment_to_pu = 1;
 
 
 #/**********************************/
@@ -922,11 +922,17 @@ sub pop_comment_for_pu
 	$tmp_text =~ s/\(/（/g;
 	$tmp_text =~ s/\)/）/g;
 
-	$tmp_text =~ s/]\s*$/］/g;   #/* うまくエスケープできず、苦肉の策 */
+	$tmp_text =~ s/]\s*$/]./g;   #/* うまくエスケープできず、苦肉の策 */
+#	$tmp_text =~ s/]\s*$/］/g;   #/* うまくエスケープできず、苦肉の策 */
 	$tmp_text =~ s/;\s*$//g;     #/* 末尾のセミコロンは除去 */
 	$tmp_text =~ s/\{/｛/g;      
 	$tmp_text =~ s/\}/｝/g;      
+	$tmp_text =~ s/\'/’/g;      #/* シングルクォーテーションはPUファイルのコメントとなってしまうので、全角エスケープ */
 
+	if ($tmp_text ne " ")
+	{
+		$tmp_text = "<b><color:green>$tmp_text</color></b>";
+	}
 	return $tmp_text;
 }
 
@@ -3560,7 +3566,7 @@ sub add_free_word
 {
 	my $add_word = $_[0];
 
-	$add_word =~ s/]\s*$/］/g;   #/* うまくエスケープできず、苦肉の策 */
+#	$add_word =~ s/]\s*$/］/g;   #/* うまくエスケープできず、苦肉の策 */
 #	$add_word =~ s/]/］/g;   #/* うまくエスケープできず、苦肉の策 */
 
 	if ($current_path->pu_block eq "")
@@ -3583,6 +3589,15 @@ sub add_free_word
 	elsif ($add_word eq "\n")
 	{
 		$current_path->pu_block($current_path->pu_block . "\n");
+	}
+	elsif ($add_word eq "{")
+	{
+		#/* 式の中でFreeWordとして出てくる{}は構造体の初期値なので、全角エスケープする */
+		$current_path->pu_block($current_path->pu_block . "｛");
+	}
+	elsif ($add_word eq "}")
+	{
+		$current_path->pu_block($current_path->pu_block . "｝");
 	}
 	else
 	{
@@ -3929,6 +3944,7 @@ sub analyze_for
 	&push_pu_text($tmp_comment);
 	if ($init_condition ne "")
 	{
+		$init_condition =~ s/\]$/\] /;
 		&push_pu_text(":$init_condition]\n");
 	}
 
@@ -4747,12 +4763,13 @@ sub analyze_declare_line
 sub analyze_formula_text
 {
 	my ($is_control, @texts) = @_;
-	my $loop  = 0;
-	my $value = 0;
-	my $type  = 0;
-	my $func  = 0;
-	my $nest  = 0;
-	my $sizeof = 0;
+	my $loop    = 0;
+	my $value   = 0;
+	my $type    = 0;           #/* 型名を指している？   */
+	my $func    = 0;           #/* 関数名を指している？ */
+	my $nest    = 0;           #/* ()のネスト           */
+	my $nest2   = 0;           #/* {}のネスト           */
+	my $sizeof  = 0;
 	my @structs = ();
 
 #	print "analyze_formula_text [$is_control] @texts\n";
@@ -4849,7 +4866,7 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /^(\.|\-\>)$/)
 		{
 			#/* 構造体へのアクセス */
-			($current_sentence->rvalue ne "") or die "strange dot or arrow1\n";
+			($current_sentence->rvalue ne "") or die "strange dot or arrow1 is_ctrl[$is_control] $loop, @texts\n";
 			($type == 0) or die "strange dot or arrow2\n";
 			$current_sentence->rvalue($current_sentence->rvalue . $1);
 			if (0 == $is_control)
@@ -4914,7 +4931,7 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /^(\+\+|\-\-|\!|\~|sizeof)$/)
 		{
 			#/* 単項演算子（位置に注意） */
-			($type == 0) or die "strange Unary operator $loop, @texts\n";
+#/*			($type == 0) or die "strange Unary operator $loop, @texts\n"; */    /* キャストの直後に変数の左側に来るケースがあるので、チェックしない */
 			$func = 0;
 			if ($texts[$loop] eq "sizeof")
 			{
@@ -4942,7 +4959,7 @@ sub analyze_formula_text
 		elsif ($texts[$loop] =~ /^(\,)$/)
 		{
 			#/* カンマ */
-			($type == 0) or die "strange array operator1 loop = $loop\n";
+			($type == 0) or die "strange array operator1 loop = $loop, @texts\n";
 			$func = 0;
 			if (0 == $is_control)
 			{
@@ -5015,13 +5032,41 @@ sub analyze_formula_text
 				add_free_word($texts[$loop]);
 			}
 		}
+		elsif ($texts[$loop] =~ /^(\{)$/)
+		{
+			#/* C99の指示初期化子でいきなり.が来るケースがあるので、式の中の{}は読み飛ばす */
+#			printf "$1 in formula! is_ctrl[$is_control] nest2=$nest2\n";
+			if (0 == $is_control)
+			{
+				add_free_word($texts[$loop]);
+			}
+
+			$nest2++;
+			while ($nest2)
+			{
+				$loop++;
+				($loop < @texts) or die "not closed {} in formula! is_ctrl[$is_control], nest2[$nest2], $loop, @texts\n";
+
+				if ($texts[$loop] =~ /^(\{)$/)
+				{
+					$nest2++;
+				}
+				elsif ($texts[$loop] =~ /^(\})$/)
+				{
+					$nest2--;
+				}
+				
+				if (0 == $is_control)
+				{
+					add_free_word($texts[$loop]);
+				}
+			}
+		}
 		else
 		{
 			#/* ここに来るのは直値だけのはず */
-			if ($sizeof == 1)
-			{
-				$sizeof = 0;
-			}
+			$type = 0;
+			$sizeof = 0;
 
 			if (0 == $is_control)
 			{
@@ -5485,16 +5530,18 @@ sub push_pu_text
 			$block_text = ":" . $current_path->pu_block;
 		}
 
+		$block_text =~ s/]\s*\n/]　\n/g;   #/* うまくエスケープできず、苦肉の策 */
+
 		#/* 末尾の改行をブロックの終端に置き換える */
 		if ( ($current_path->call_block == 0) ||
 			 ($block_text =~ /\|/) )
 		{
 			#/* 関数コールを含むブロックは|を使って二重線のブロックにするが、文中に|が含まれている場合は、PlantUMLがsyntax errorを起こすので回避する */
-			$block_text =~ s/\n$/]\n/
+			$block_text =~ s/\n$/]\n/;
 		}
 		else
 		{
-			$block_text =~ s/\n$/|\n/
+			$block_text =~ s/\n$/|\n/;
 		}
 
 #		print "push pu_block!!!\n";
@@ -5798,6 +5845,10 @@ sub output_path
 			}
 
 			$text = &restore_literal($text);
+			if ($text =~ /\|.*\|\n$/)
+			{
+				$text =~ s/\|\n$/]\n/;             #/* リテラル中に|が含まれていると、syntax errorとなるのでワークアラウンド */
+			}
 			print OUT_PU_OUT $text;
 		}
 	}

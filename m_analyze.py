@@ -38,6 +38,7 @@ re_typedef_member   = re.compile(r"^\t\t([^\t]+)\t([^\t]*)\t([^\t]+)\t([^\t]+)\n
 #/* グローバル変数 */
 g_output_fld         = "m_analyze"
 g_setting_file       = "m_analyze_setting.txt"
+g_c_setting_file    = "c_analyze_setting.txt"
 g_log_file_name      = ""
 g_output_temp_text   = 0
 g_default_log        = 0
@@ -52,6 +53,14 @@ g_call_tree          = []
 g_called_tree        = []
 g_tree_stack         = []
 g_tree_depend        = []
+
+
+class cAnalyzeSettings:
+    def __init__(self, file_name, setting_file, char_set):
+        self.target_file  = file_name
+        self.setting_file = setting_file
+        self.char_set     = char_set
+        return
 
 
 class cDependency:
@@ -413,10 +422,14 @@ def search_dir(directory):
             result = re.match(r".*\.[cChH]$", filename)
             if (result):
 #               print ("Match! filename : %s" % filename)
-                g_target_files.append(directory + "\\" + filename)
+#               g_target_files.append(directory + "\\" + filename)
+                c_analyze_set = cAnalyzeSettings(directory + "\\" + filename, "", 0)
+                g_target_files.append(c_analyze_set)
+
 
 def check_command_line_option():
     global g_setting_file
+    global g_c_setting_file
     global g_output_fld
     global g_log_file_name
     global g_default_log
@@ -429,9 +442,6 @@ def check_command_line_option():
     argc = len(sys.argv)
     option = ""
     first  = 1
-
-    if (argc == 1):
-        print("analyze module by default setting.txt")
 
     for arg in sys.argv:
         if (first == 1):
@@ -471,9 +481,21 @@ def check_command_line_option():
                 search_dir(arg)
             elif (os.path.isfile(arg)):
 #               print("file! %s" % arg)
-                g_target_files.append(arg)
+#               g_target_files.append(arg)
+                c_analyze_set = cAnalyzeSettings(arg, "", 0)
+                g_target_files.append(c_analyze_set)
             else:
                 print("unknown arg! %s" % arg)
+
+
+    if (os.path.isfile(g_setting_file) == False):
+        print("setting file not found! [%s]" % g_setting_file)
+        print("  specify settning file with -s option.")
+        exit(-1)
+
+    if (argc == 1):
+        print("analyze module by default setting.txt")
+
 
 
 #/*****************************************************************************/
@@ -486,6 +508,7 @@ def read_setting_file():
     global g_call_tree
     global g_called_tree
     global g_jar_path
+    global g_c_setting_file
 
     print("read_setting_file");
     f = open(g_setting_file, 'r')
@@ -493,6 +516,7 @@ def read_setting_file():
 
     re_source     = re.compile(r"source\s+(.+)\n")
     re_jar        = re.compile(r"plantuml[ \t]+([^\s]+)")
+    re_c_setting  = re.compile(r"c_setting([0-9]*)[ \t]+([^\s]+)")
     re_module     = re.compile(r"module_name[ \t]+([^\s]+)")
     re_charset    = re.compile(r"default_charset[ \t]+([^\s]+)")
     re_calltree   = re.compile(r"calltree[ \t]+([^\s]+)")
@@ -502,7 +526,12 @@ def read_setting_file():
 #       print ("line:%s" % line)
         if (result := re_source.match(line)):
             print ("source   : " + result.group(1))
-            g_target_files.append(result.group(1))
+#           g_target_files.append(result.group(1))
+            c_analyze_set = cAnalyzeSettings(result.group(1), g_c_setting_file, g_charset_utf)
+            g_target_files.append(c_analyze_set)
+        elif (result := re_c_setting.match(line)):
+            g_c_setting_file = result.group(2)
+            print ("c_setting file : " + g_c_setting_file)
         elif (result := re_jar.match(line)):
             print ("jar file : " + result.group(1))
             g_jar_path = result.group(1)
@@ -555,19 +584,21 @@ def log_settings():
 #/*****************************************************************************/
 def c_analyze():
     global g_target_files
-    global g_charset_utf
     global g_without_pu_convert
 
     print("c_analyze")
     for source_file in g_target_files:
-        print("  analyzing %s" % source_file, file = sys.__stdout__)
+        print("  analyzing %s" % source_file.target_file, file = sys.__stdout__)
 
-        cmd_text = "perl c_analyze.pl -o %s %s" % (g_output_fld, source_file)
+        cmd_text = "perl c_analyze.pl -o %s %s" % (g_output_fld, source_file.target_file)
+
+        if (source_file.setting_file != ""):
+            cmd_text += " -s " + source_file.setting_file
 
         if (g_output_temp_text == 1):
             cmd_text += " -t"
 
-        if (g_charset_utf == 1):
+        if (source_file.char_set == 1):
             cmd_text += " -utf"
 
         if (g_without_pu_convert == 1):
@@ -584,11 +615,11 @@ def module_analyze():
 
     print("module_analyze")
     for source_file in g_target_files:
-        csv_file_name = os.path.basename(source_file) + "_analyzed.csv"
+        csv_file_name = os.path.basename(source_file.target_file) + "_analyzed.csv"
         print("read csv : %s" % csv_file_name, file = sys.__stdout__);
         csv_file_name = g_output_fld + "\\" + csv_file_name
         module = cModule()
-        module.name = os.path.basename(source_file)
+        module.name = os.path.basename(source_file.target_file)
         module.load_csv(csv_file_name)
         g_modules.append(module)
 

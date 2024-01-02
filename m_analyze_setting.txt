@@ -6,7 +6,7 @@
 # plantumlのjarファイルパスを指定してください。
 # 省略した場合は、puファイルの変換を行いません
 
-plantuml C:\Users\tkubo\.vscode\extensions\jebbs.plantuml-2.16.0\plantuml.jar
+plantuml c:\tools\plantuml-asl-1.2023.12.jar
 
 
 ###################################################
