@@ -31,6 +31,7 @@ use Digest::MD5;
 
 #use utf8;
 use Encode 'encode';
+use Encode qw(decode FB_CROAK);
 
 use constant CONT_SIZE => "<b><size:20>";
 use constant SENTENCE_CONTROL => 0;
@@ -520,6 +521,32 @@ sub post_proc_c_file
 }
 
 
+#/* 文字コード判定 */
+sub detect_encoding 
+{
+    my ($bytes) = @_;
+
+    # 1. UTF-8 で decode できるか試す
+    eval {
+        decode('UTF-8', $bytes, FB_CROAK);
+    };
+    if ($@ eq '') {
+        return 'UTF-8';
+    }
+
+    # 2. Shift_JIS（CP932）で decode を試す
+    eval {
+        decode('CP932', $bytes, FB_CROAK);
+    };
+    if ($@ eq '') {
+        return 'Shift_JIS';
+    }
+
+    # 3. どっちも無理ならUTF-8
+    return 'UTF-8';
+}
+
+
 #/* 解析前にCコードを成形する */
 sub prepare_c_file
 {
@@ -530,6 +557,20 @@ sub prepare_c_file
 	@output_lines = ();
 	@input_lines  = ();
 	open(SOURCE_IN,"$source_file") || die "Can't open source file. $source_file\n";
+	my $tmp_data = do { local $/; <SOURCE_IN> };
+	my $enc = detect_encoding($tmp_data);
+	print "encoding = $enc\n";
+	close(SOURCE_IN);
+
+	if ($enc eq 'Shift_JIS')
+	{
+		open(SOURCE_IN,"<:encoding(Shift_JIS)",$source_file) || die "Can't open source file. $source_file\n";
+	}
+	else
+	{
+		open(SOURCE_IN,$source_file) || die "Can't open source file. $source_file\n";
+	}
+
 	while ( <SOURCE_IN> )
 	{
 		push @input_lines, $_;
