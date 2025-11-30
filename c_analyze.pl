@@ -1892,18 +1892,18 @@ sub calc_text
 #	print "calc $text\n";
 	
 	#/* definedの処理 */
-	while ($text =~ /defined[\s\(]+([_A-Za-z][_A-Za-z0-9]*)[\s\)]+/)
+	while ($text =~ /defined[\s\(]*([_A-Za-z][_A-Za-z0-9]*)[\s\)]*/)
 	{
 		$result = is_valid_macro($1);
 		if ($result == 1)
 		{
 #			print "defined $1\n";
-			$text =~ s/defined[\s\(]+([_A-Za-z][_A-Za-z0-9]*)[\s\)]+/1/;
+			$text =~ s/defined[\s\(]*([_A-Za-z][_A-Za-z0-9]*)[\s\)]*/1/;
 		}
 		else
 		{
 #			print "not defined $1\n";
-			$text =~ s/defined[\s\(]+([_A-Za-z][_A-Za-z0-9]*)[\s\)]+/0/;
+			$text =~ s/defined[\s\(]*([_A-Za-z][_A-Za-z0-9]*)[\s\)]*/0/;
 		}
 	}
 
