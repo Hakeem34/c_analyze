@@ -5537,11 +5537,11 @@ sub push_pu_text
 			 ($block_text =~ /\|/) )
 		{
 			#/* 関数コールを含むブロックは|を使って二重線のブロックにするが、文中に|が含まれている場合は、PlantUMLがsyntax errorを起こすので回避する */
-			$block_text =~ s/\n$/]\n/;
+			$block_text =~ s/\n$/; <<task>>\n/;
 		}
 		else
 		{
-			$block_text =~ s/\n$/|\n/;
+			$block_text =~ s/\n$/; <<procedure>>\n/;
 		}
 
 #		print "push pu_block!!!\n";
